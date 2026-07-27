@@ -21,7 +21,7 @@
     display: flex; align-items: center; gap: 16px;
   }
   header h1 { font-family: 'Poppins', sans-serif; font-size: 20px; font-weight: 700; }
-  .header-mascot { width: 52px; height: 52px; border-radius: 12px; margin-right: 12px; flex: 0 0 auto; }
+  .header-mascot { width: 64px; height: 64px; border-radius: 12px; margin-right: 12px; flex: 0 0 auto; }
   .tip { position: relative; }
   .tip:hover::after {
     content: attr(data-tip); position: absolute; top: calc(100% + 8px); left: 0;
@@ -263,6 +263,62 @@
     max-height: 44px; max-width: 180px;
     z-index: 5; pointer-events: none;
   }
+
+  /* Mobile responsive styles */
+  @media (max-width: 768px) {
+    header {
+      flex-wrap: wrap;
+      padding: 12px 16px;
+      gap: 8px;
+    }
+    header h1 {
+      font-size: 18px;
+    }
+    .header-mascot {
+      width: 48px;
+      height: 48px;
+      margin-right: 8px;
+    }
+    .btn {
+      font-size: 12px;
+      padding: 8px 12px;
+    }
+    header .spacer {
+      flex-basis: 100%;
+    }
+    #btnTryFree {
+      margin-left: 0;
+    }
+  }
+
+  @media (max-width: 480px) {
+    header {
+      padding: 10px 12px;
+      gap: 6px;
+    }
+    header h1 {
+      font-size: 16px;
+    }
+    .header-mascot {
+      width: 40px;
+      height: 40px;
+      margin-right: 6px;
+    }
+    .btn {
+      font-size: 11px;
+      padding: 6px 10px;
+    }
+    header .btn-ghost {
+      display: none;
+    }
+    header #btnTryFree {
+      display: block;
+      font-size: 12px;
+      padding: 8px 12px;
+      flex: 1;
+      min-width: 100px;
+    }
+  }
 </style>
 </head>
 <body>
@@ -273,10 +329,13 @@
   <h1>Snail <span>Sign</span></h1>
   <span class="mode-badge" id="modeBadge" style="display:none">Prepare</span>
   <div class="spacer"></div>
-  <button class="btn btn-ghost" id="btnSecurity">&#128274; Security</button>
+  <button class="btn btn-ghost" id="btnStory">📖 Story</button>
+  <button class="btn btn-ghost" id="btnWhySnail">✓ Why Snail Sign</button>
+  <button class="btn btn-ghost" id="btnTrustSecurity">🛡️ Trust & Security</button>
   <button class="btn btn-ghost" id="btnRestart" style="display:none">Start over</button>
   <button class="btn btn-ghost" id="btnGenerate" style="display:none">Download signing file</button>
   <button class="btn btn-primary" id="btnOpenSend" style="display:none">Send for signature &rarr;</button>
+  <button class="btn btn-coral" id="btnTryFree" style="margin-left:8px">Try it free →</button>
 </header>
 
 <div id="pricingBanner">
@@ -408,9 +467,61 @@
   </div>
 </div>
 
-<div id="securityOverlay" style="position:fixed;inset:0;background:rgba(15,17,23,.6);z-index:105;display:none;align-items:center;justify-content:center">
+<div id="storyOverlay" style="position:fixed;inset:0;background:rgba(15,17,23,.6);z-index:105;display:none;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:16px;padding:26px;width:640px;max-width:94vw;max-height:86vh;overflow:auto">
-    <h3 style="font-family:'Poppins',sans-serif;margin-bottom:4px">How Snail Sign protects your documents</h3>
+    <h3 style="font-family:'Poppins',sans-serif;margin-bottom:12px">Snail Sign Story</h3>
+    <p style="font-size:14px;color:#555;line-height:1.7;margin-bottom:16px">
+      Snail Sign was built by a bootstrapped founder. Signatures matter. They close deals, bring people on board, and move real work forward. What didn't add up was paying enterprise prices to collect them.
+    </p>
+    <p style="font-size:14px;color:#555;line-height:1.7;margin-bottom:16px">
+      When you are building something from nothing, every dollar has a job. Paying $300 a year for e-signing meant $300 doing one small task, when that same money could be working harder elsewhere in the business. Enterprise pricing is built for enterprises, not for someone still getting off the ground.
+    </p>
+    <p style="font-size:14px;color:#555;line-height:1.7;margin-bottom:16px">
+      So Snail Sign does the same job for a fraction of the price. Signatures still get a tool they deserve, and your money is free to go where it grows the business. That is the whole idea: spend on growth, not signatures.
+    </p>
+    <p style="font-size:14px;color:#888;font-style:italic">— Emily, founder</p>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="btnStoryClose">Got it</button>
+    </div>
+  </div>
+</div>
+
+<div id="whySnailOverlay" style="position:fixed;inset:0;background:rgba(15,17,23,.6);z-index:105;display:none;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;padding:26px;width:720px;max-width:94vw;max-height:86vh;overflow:auto">
+    <h3 style="font-family:'Poppins',sans-serif;margin-bottom:16px">Why Snail Sign</h3>
+    <div class="sec-item"><strong>✓ Save money every month.</strong>
+      One simple price: $1/month or $10/year (save 17%). No seats, no tiers, no enterprise pricing, ever. Your first document is always free.</div>
+    <div class="sec-item"><strong>✓ Security that matches the big tools.</strong>
+      AES-256 encryption, cryptographically sealed signing links, and a tamper-evident SHA-256 certificate on every signed PDF. The same protections the big-name e-sign tools charge enterprise prices for.</div>
+    <div class="sec-item"><strong>✓ Built for small teams.</strong>
+      Everything you need to send, sign and prove a document, without the enterprise bloat you will never use.</div>
+    <div style="margin-top:24px;padding-top:16px;border-top:1px solid #ddd">
+      <h4 style="font-family:'Poppins',sans-serif;font-size:14px;margin-bottom:14px">How Snail Sign compares</h4>
+      <table style="width:100%;font-size:13px;border-collapse:collapse">
+        <tr style="border-bottom:1px solid #ddd">
+          <td style="padding:10px;font-weight:600">Snail Sign</td>
+          <td style="padding:10px">$1/mo</td>
+        </tr>
+        <tr style="border-bottom:1px solid #ddd;background:#f9f8f6">
+          <td style="padding:10px;font-weight:600">eSign Tool 1</td>
+          <td style="padding:10px">from ~$7/mo</td>
+        </tr>
+        <tr style="border-bottom:1px solid #ddd">
+          <td style="padding:10px;font-weight:600">eSign Tool 2</td>
+          <td style="padding:10px">from ~$40/mo</td>
+        </tr>
+      </table>
+      <p style="font-size:12px;color:#888;margin-top:12px">Comparison figures are approximate, based on publicly listed pricing, and may change.</p>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="btnWhySnailClose">Got it</button>
+    </div>
+  </div>
+</div>
+
+<div id="trustSecurityOverlay" style="position:fixed;inset:0;background:rgba(15,17,23,.6);z-index:105;display:none;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;padding:26px;width:640px;max-width:94vw;max-height:86vh;overflow:auto">
+    <h3 style="font-family:'Poppins',sans-serif;margin-bottom:4px">Trust & Security</h3>
     <p style="font-size:13px;color:#888;margin-bottom:16px">Plain answers, no legal jargon.</p>
     <div class="sec-item"><strong>Your document stays on your computer until you send it.</strong>
       Preparing a document happens entirely in your browser. Nothing is uploaded anywhere until you click Send.</div>
@@ -432,7 +543,7 @@
       We don't read your documents, sell your data, or use your files to train AI.
       Documents exist in our storage only long enough to collect signatures.</div>
     <div class="modal-actions">
-      <button class="btn btn-primary" id="btnSecurityClose">Got it</button>
+      <button class="btn btn-primary" id="btnTrustSecurityClose">Got it</button>
     </div>
   </div>
 </div>
@@ -620,11 +731,30 @@ window.addEventListener('DOMContentLoaded', function () {
   });
   tintSignerSelect();
   document.getElementById('signerSelect').addEventListener('change', tintSignerSelect);
-  document.getElementById('btnSecurity').addEventListener('click', function () {
-    document.getElementById('securityOverlay').style.display = 'flex';
+  document.getElementById('btnStory').addEventListener('click', function () {
+    document.getElementById('storyOverlay').style.display = 'flex';
   });
-  document.getElementById('btnSecurityClose').addEventListener('click', function () {
-    document.getElementById('securityOverlay').style.display = 'none';
+  document.getElementById('btnStoryClose').addEventListener('click', function () {
+    document.getElementById('storyOverlay').style.display = 'none';
+  });
+  document.getElementById('btnWhySnail').addEventListener('click', function () {
+    document.getElementById('whySnailOverlay').style.display = 'flex';
+  });
+  document.getElementById('btnWhySnailClose').addEventListener('click', function () {
+    document.getElementById('whySnailOverlay').style.display = 'none';
+  });
+  document.getElementById('btnTrustSecurity').addEventListener('click', function () {
+    document.getElementById('trustSecurityOverlay').style.display = 'flex';
+  });
+  document.getElementById('btnTrustSecurityClose').addEventListener('click', function () {
+    document.getElementById('trustSecurityOverlay').style.display = 'none';
+  });
+  document.getElementById('btnTryFree').addEventListener('click', function () {
+    var emailInput = document.getElementById('freeEmailInput');
+    if (emailInput) {
+      document.getElementById('keyOverlay').style.display = 'flex';
+      emailInput.focus();
+    }
   });
   document.getElementById('btnPromoClose').addEventListener('click', function () {
     document.getElementById('promoCta').style.display = 'none';
