@@ -477,6 +477,12 @@
     <p style="font-size:14px;color:#555;line-height:1.8;margin-bottom:14px">Every version. Every redline. Every approval. Every signer. Every decision. Every audit. Captured. Preserved. Never lost. Just like a snail leaves a trail wherever it goes, every agreement should leave a trail you can trust.</p>
     <p style="font-size:14px;color:#555;line-height:1.8;margin-bottom:14px">That's why I built Snail Sign—to give founders and growing businesses enterprise-grade electronic signatures, without enterprise complexity or enterprise pricing.</p>
     <p style="font-size:14px;color:#555;line-height:1.8;margin-bottom:16px"><strong>Built for founders. Built for growing businesses. Built on trust.</strong></p>
+    <svg viewBox="0 0 260 70" width="200" height="54" aria-hidden="true" style="display:block;margin:2px 0 2px -6px">
+      <path d="M14 48 C 26 14, 44 10, 46 26 C 48 40, 34 54, 24 50 C 40 46, 58 24, 72 22 C 84 20, 78 40, 90 38 C 100 36, 104 22, 116 24 C 126 26, 122 42, 136 36 C 150 30, 158 16, 172 20 C 184 24, 176 44, 194 36 C 206 30, 218 26, 234 30"
+            fill="none" stroke="var(--teal)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>
+      <path d="M40 58 C 90 52, 160 52, 226 55" fill="none" stroke="var(--teal)" stroke-width="1.4" stroke-linecap="round" opacity="0.45"/>
+      <circle cx="238" cy="30" r="2" fill="var(--coral)"/>
+    </svg>
     <p style="font-size:14px;color:#888;font-style:italic">— Emily, founder</p>
     <div class="modal-actions">
       <button class="btn btn-primary" id="btnStoryClose">Got it</button>
@@ -749,11 +755,9 @@ window.addEventListener('DOMContentLoaded', function () {
     document.getElementById('trustSecurityOverlay').style.display = 'none';
   });
   document.getElementById('btnTryFree').addEventListener('click', function () {
-    var emailInput = document.getElementById('freeEmailInput');
-    if (emailInput) {
-      document.getElementById('keyOverlay').style.display = 'flex';
-      emailInput.focus();
-    }
+    // Open the dialog through requestEsignCred so Cancel / Save / Free-send
+    // buttons all get their click handlers wired up.
+    requestEsignCred(false);
   });
   document.getElementById('btnPromoClose').addEventListener('click', function () {
     document.getElementById('promoCta').style.display = 'none';
