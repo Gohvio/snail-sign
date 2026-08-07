@@ -617,7 +617,7 @@
   </div>
   <div id="tcIntro">
     <h3>Someone sent this back with edits</h3>
-    Every change they made is marked below &mdash; <span style="color:var(--rl-red);text-decoration:line-through">wording they took out</span>
+    <span id="tcIntroHow">Every change they made is marked below &mdash;</span> <span style="color:var(--rl-red);text-decoration:line-through">wording they took out</span>
     and <span style="color:var(--rl-red);text-decoration:underline">wording they put in</span>. Use the
     <strong>&#10003;</strong> and <strong>&#10007;</strong> buttons beside each one to accept or reject it.
     When you're done, the document is rebuilt clean &mdash; accepted edits become the real text and all the markup disappears &mdash;
@@ -1457,7 +1457,105 @@ async function tcLoadComments(zip) {
   return map;
 }
 
-/* Returns true if the file had tracked changes and the review screen is now up. */
+/* ---- hand-marked redlines ----
+   Plenty of redlines never use Word's Track Changes at all: the person just
+   strikes out the wording they want gone and underlines what they want instead.
+   Those are ordinary runs with <w:strike> / <w:u> formatting, invisible to the
+   code above. We convert them into real <w:del> / <w:ins> as the file loads, so
+   the review screen, the clean rebuild and the audit trail all work unchanged.
+
+   Only done when something is struck out. A contract with underlined headings
+   and no strikethrough is a clean document, not a redline. */
+
+/* <w:strike/> is on; <w:strike w:val="0"/> is off. Same for w:u ("none"). */
+function tcOnVal(el) {
+  if (!el) return false;
+  var v = String(tcAttr(el, 'val') || '').toLowerCase();
+  return !(v === '0' || v === 'false' || v === 'off' || v === 'none');
+}
+
+/* Generators write their own name into the file properties. Showing
+   "python-docx" as the author of a contract change would look broken. */
+var TC_NOT_PEOPLE = /^(python-docx|python docx|microsoft word|word|libreoffice|openoffice|apache poi|docx4j|unknown|user|admin|author|owner)$/i;
+
+/* Who marked the file up, per the Word file properties. May be ''. */
+async function tcMarkupAuthor(zip) {
+  var out = { author: '', date: '' };
+  var f = zip.file('docProps/core.xml');
+  if (!f) return out;
+  try {
+    var xml = new DOMParser().parseFromString(await f.async('string'), 'application/xml');
+    function pick(tag) {
+      var e = xml.getElementsByTagName(tag)[0];
+      return e ? String(e.textContent || '').trim() : '';
+    }
+    var who = pick('cp:lastModifiedBy') || pick('dc:creator');
+    if (who && !TC_NOT_PEOPLE.test(who)) out.author = who;
+    out.date = pick('dcterms:modified') || pick('dcterms:created') || '';
+  } catch (e) { /* attribution is a nicety — never fail the upload over it */ }
+  return out;
+}
+
+/* <w:t> inside a <w:del> has to become <w:delText>, the mirror of tcDelTextToT. */
+function tcTToDelText(root) {
+  [['t', 'delText'], ['instrText', 'delInstrText']].forEach(function (pair) {
+    var els = root.getElementsByTagNameNS(W_NS, pair[0]);
+    for (var i = els.length - 1; i >= 0; i--) {
+      var t = els[i], doc = t.ownerDocument;
+      var d = doc.createElementNS(W_NS, 'w:' + pair[1]);
+      for (var a = 0; a < t.attributes.length; a++) d.setAttribute(t.attributes[a].name, t.attributes[a].value);
+      d.setAttribute('xml:space', 'preserve');
+      d.appendChild(doc.createTextNode(t.textContent));
+      t.parentNode.replaceChild(d, t);
+    }
+  });
+}
+
+/* Rewrite struck-out / underlined runs as tracked deletions and insertions.
+   Returns how many runs were converted. */
+function tcMarkupToTracked(xml, author, date) {
+  var runs = xml.getElementsByTagNameNS(W_NS, 'r');
+  var todo = [], i;
+  for (i = 0; i < runs.length; i++) {
+    var r = runs[i];
+    // Skip anything already inside a tracked wrapper, and empty runs.
+    var anc = r.parentNode, inside = false;
+    while (anc && anc.nodeType === 1) {
+      var an = tcName(anc);
+      if (TC_INS[an] || TC_DEL[an]) { inside = true; break; }
+      anc = anc.parentNode;
+    }
+    if (inside) continue;
+    if (!r.getElementsByTagNameNS(W_NS, 't').length) continue;
+    var rPr = tcFirst(r, 'rPr');
+    if (!rPr) continue;
+    var strike = tcOnVal(tcFirst(rPr, 'strike')) || tcOnVal(tcFirst(rPr, 'dstrike'));
+    var under = tcOnVal(tcFirst(rPr, 'u'));
+    if (strike) todo.push([r, 'del', rPr]);            // strike wins if both are set
+    else if (under) todo.push([r, 'ins', rPr]);
+  }
+  var id = 9000;
+  todo.forEach(function (job) {
+    var r = job[0], kind = job[1], rPr = job[2];
+    var w = xml.createElementNS(W_NS, 'w:' + kind);
+    w.setAttribute('w:id', String(id++));
+    if (author) w.setAttribute('w:author', author);
+    if (date) w.setAttribute('w:date', date);
+    r.parentNode.insertBefore(w, r);
+    w.appendChild(r);
+    if (kind === 'del') tcTToDelText(r);
+    // Drop the visual marker: the redline styling now comes from the wrapper.
+    tcRemove(tcFirst(rPr, kind === 'del' ? 'strike' : 'u'));
+    if (kind === 'del') tcRemove(tcFirst(rPr, 'dstrike'));
+  });
+  return todo.length;
+}
+
+/* The "Redline key: strikethrough = ..." note is instructions for the reader,
+   not part of the agreement. It must not survive into the signed document. */
+var TC_LEGEND = /^\s*(redline\s*(key|legend)|key\s*to\s*(the\s*)?redline)\b/i;
+
+/* Returns true if the file had changes to review and the review screen is now up. */
 async function tcLoad(buf) {
   if (typeof JSZip === 'undefined') return false;
   var zip, xmlText;
@@ -1469,14 +1567,20 @@ async function tcLoad(buf) {
   } catch (e) { return false; }
   // Cheap pre-check. The character class after the name stops <w:insideH> and
   // <w:delText> from giving false positives.
-  if (!/<w:(ins|del|moveTo|moveFrom)[\s/>]/.test(xmlText)) return false;
+  var tracked = /<w:(ins|del|moveTo|moveFrom)[\s/>]/.test(xmlText);
+  var marked = !tracked && /<w:d?strike[\s/>]/.test(xmlText);
+  if (!tracked && !marked) return false;
   var xml = new DOMParser().parseFromString(xmlText, 'application/xml');
   if (xml.getElementsByTagName('parsererror').length) return false;
+  if (marked) {
+    var who = await tcMarkupAuthor(zip);
+    if (!tcMarkupToTracked(xml, who.author, who.date)) return false;
+  }
   var comments = await tcLoadComments(zip);
   var view = tcBuildView(xml, comments);
   if (!view.changes.length) return false;
   tc = { zip: zip, xml: xml, changes: view.changes, html: view.html,
-         comments: comments, fmtCount: view.fmtCount };
+         comments: comments, fmtCount: view.fmtCount, marked: marked };
   tcShow();
   return true;
 }
@@ -1486,13 +1590,17 @@ function tcShow() {
   var authors = {}, n = 0;
   tc.changes.forEach(function (c) { if (c.author && !authors[c.author]) { authors[c.author] = 1; n++; } });
   var who = Object.keys(authors);
-  var bits = [tc.changes.length + ' tracked change' + (tc.changes.length === 1 ? '' : 's')];
+  var bits = [tc.changes.length + ' proposed change' + (tc.changes.length === 1 ? '' : 's')];
   if (who.length) bits.push('by ' + who.slice(0, 3).join(', ') + (who.length > 3 ? ' and others' : ''));
+  if (tc.marked) bits.push('marked with strikethrough and underline');
   var cCount = Object.keys(tc.comments).length;
   if (cCount) bits.push(cCount + ' comment' + (cCount === 1 ? '' : 's'));
   if (tc.fmtCount) bits.push(tc.fmtCount + ' formatting change' + (tc.fmtCount === 1 ? '' : 's') + ' (kept as-is)');
   document.getElementById('tcSub').textContent = bits.join(' · ');
   document.getElementById('tcTitle').textContent = 'Review the changes to ' + state.docName;
+  document.getElementById('tcIntroHow').textContent = tc.marked
+    ? 'This file was marked up by hand rather than with Word’s Track Changes — struck-out wording is a proposed deletion and underlined wording a proposed addition. We read it the same way:'
+    : 'Every change they made is marked below —';
   document.body.classList.add('tc');
   window.scrollTo(0, 0);
   tcSync();
@@ -1582,12 +1690,18 @@ async function tcApply() {
     var xml = tc.xml;
 
     // 1. Run-level edits. Keep an insertion only if accepted; keep a deletion
-    //    only if rejected. Everything else is removed outright.
+    //    only if rejected. Everything else is removed outright. Note the
+    //    paragraphs we take text out of, so step 5 can tidy any left blank.
+    var touched = [];
     tc.changes.forEach(function (ch) {
       if (ch.type === 'split' || ch.type === 'merge') return;
       ch.nodes.forEach(function (nd) {
         var keep = (nd.kind === 'ins') ? (ch.decision === 'accept') : (ch.decision === 'reject');
-        if (keep) tcUnwrap(nd.el, nd.kind === 'del'); else tcRemove(nd.el);
+        if (keep) { tcUnwrap(nd.el, nd.kind === 'del'); return; }
+        var up = nd.el.parentNode;
+        while (up && up.nodeType === 1 && tcName(up) !== 'p') up = up.parentNode;
+        if (up && up.nodeType === 1 && touched.indexOf(up) < 0) touched.push(up);
+        tcRemove(nd.el);
       });
     });
 
@@ -1611,10 +1725,34 @@ async function tcApply() {
         for (var i = els.length - 1; i >= 0; i--) tcRemove(els[i]);
       });
 
-    // 4. Keep the decisions for the audit trail on the signed PDF.
+    // 4. Hand-marked files carry a "Redline key: ..." note explaining the
+    //    markup. That's guidance for the reader, not a term of the agreement,
+    //    so it must not survive into the signed document.
+    if (tc.marked) {
+      var ps = xml.getElementsByTagNameNS(W_NS, 'p');
+      for (var pi = ps.length - 1; pi >= 0; pi--) {
+        if (TC_LEGEND.test(tcText(ps[pi]))) tcRemove(ps[pi]);
+      }
+    }
+
+    // 5. A paragraph whose every word was deleted would otherwise be left
+    //    behind as a stray blank line. Only paragraphs we emptied ourselves.
+    touched.forEach(function (p) {
+      if (!p.parentNode) return;
+      if (tcText(p).trim()) return;
+      if (p.getElementsByTagNameNS(W_NS, 'r').length) return;
+      if (p.getElementsByTagNameNS(W_NS, 'drawing').length) return;
+      if (p.getElementsByTagNameNS(W_NS, 'pict').length) return;
+      var pPr = tcFirst(p, 'pPr');
+      if (pPr && tcFirst(pPr, 'sectPr')) return;
+      tcRemove(p);
+    });
+
+    // 6. Keep the decisions for the audit trail on the signed PDF.
     state.trackedLog = tc.changes.map(function (ch) {
       return { n: ch.n, type: ch.type, author: ch.author || '', date: ch.date || '',
-               deleted: ch.deleted, inserted: ch.inserted, decision: ch.decision };
+               deleted: ch.deleted, inserted: ch.inserted, decision: ch.decision,
+               src: tc.marked ? 'format' : 'tracked' };
     });
 
     var out = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
@@ -2975,8 +3113,11 @@ function addChangeSchedulePages(doc, helv, bold) {
   // resolved before the document was ever sent out.
   if (state.trackedLog && state.trackedLog.length) {
     var tAcc = state.trackedLog.filter(function (c) { return c.decision === 'accept'; }).length;
-    wrap('A.  Tracked changes received in the Word document', bold, 12.5, dark, 0, 6);
-    wrap(state.trackedLog.length + ' tracked change(s) were present in the uploaded file; ' + tAcc +
+    var tFmt = state.trackedLog[0] && state.trackedLog[0].src === 'format';
+    wrap('A.  Redlines received in the Word document', bold, 12.5, dark, 0, 6);
+    wrap(state.trackedLog.length + (tFmt
+           ? ' proposed change(s) were marked in the uploaded file using strikethrough for deletions and underline for additions; '
+           : ' tracked change(s) were present in the uploaded file; ') + tAcc +
          ' accepted and written into the text above, ' + (state.trackedLog.length - tAcc) +
          ' rejected and discarded. The document was rebuilt from these decisions before signing.',
          helv, 10, grey, 0, 10);
