@@ -9,6 +9,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root {
     --teal: #0D7377; --coral: #FF6B6B; --dark: #0F1117; --light: #F9F8F6;
@@ -264,6 +265,243 @@
     z-index: 5; pointer-events: none;
   }
 
+  /* ===================== Redline / negotiation ===================== */
+  :root { --rl-red: #C62828; --rl-green: #1B7A3E; --rl-amber: #B26A00; }
+
+  /* Toolbar shown to a signer who may propose changes */
+  #negotiateBar {
+    display: none; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: #fff; border-bottom: 1px solid var(--border);
+    padding: 10px 24px; position: sticky; top: 0; z-index: 55;
+  }
+  body.negotiate #negotiateBar { display: flex; }
+  #negotiateBar .hint { font-size: 13px; color: #666; }
+  .rl-tool {
+    font-size: 13px; font-weight: 500; padding: 7px 12px; border-radius: 8px;
+    border: 1px dashed var(--rl-red); color: var(--rl-red); background: #fff;
+    cursor: pointer;
+  }
+  .rl-tool.active { background: var(--rl-red); color: #fff; border-style: solid; }
+  .rl-tool.comment { border-color: var(--rl-amber); color: var(--rl-amber); }
+  .rl-tool.comment.active { background: var(--rl-amber); color: #fff; }
+  #rlCount { font-size: 13px; font-weight: 600; color: var(--rl-red); }
+
+  /* crosshair while arming a redline */
+  body.rl-arming .page-wrap { cursor: crosshair; }
+  body.rl-arming .field { pointer-events: none; }
+  .rl-rubber {
+    position: absolute; border: 2px dashed var(--rl-red);
+    background: rgba(198,40,40,.12); z-index: 30; pointer-events: none;
+  }
+
+  /* A proposed change sitting on the page */
+  .redline {
+    position: absolute; z-index: 25; cursor: pointer;
+    border: 1px solid var(--rl-red); background: rgba(198,40,40,.10);
+  }
+  .redline .rl-strike {
+    position: absolute; left: 0; right: 0; top: 50%; height: 2px;
+    background: var(--rl-red);
+  }
+  .redline .rl-num {
+    position: absolute; top: -10px; left: -10px; min-width: 20px; height: 20px;
+    border-radius: 10px; background: var(--rl-red); color: #fff;
+    font-size: 11px; font-weight: 700; line-height: 20px; text-align: center;
+    padding: 0 5px;
+  }
+  .redline .rl-new {
+    position: absolute; left: 0; top: calc(100% + 3px); white-space: nowrap;
+    background: #fff; border: 1px solid var(--rl-red); border-radius: 5px;
+    color: var(--rl-red); font-size: 11.5px; font-weight: 600;
+    padding: 2px 6px; max-width: 420px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .redline.accepted { border-color: var(--rl-green); background: rgba(27,122,62,.10); }
+  .redline.accepted .rl-strike, .redline.accepted .rl-num { background: var(--rl-green); }
+  .redline.accepted .rl-new { border-color: var(--rl-green); color: var(--rl-green); }
+  .redline.rejected { border-color: #999; background: rgba(0,0,0,.05); opacity: .55; }
+  .redline.rejected .rl-strike, .redline.rejected .rl-num { background: #999; }
+  .redline.rejected .rl-new { border-color: #999; color: #777; text-decoration: line-through; }
+  .redline.focus { box-shadow: 0 0 0 4px rgba(198,40,40,.28); }
+
+  /* A standalone comment pin */
+  .rl-pin {
+    position: absolute; width: 26px; height: 26px; border-radius: 50% 50% 50% 2px;
+    background: var(--rl-amber); color: #fff; font-size: 12px; font-weight: 700;
+    line-height: 26px; text-align: center; cursor: pointer; z-index: 26;
+    box-shadow: 0 2px 6px rgba(0,0,0,.25);
+  }
+  .rl-pin.accepted { background: var(--rl-green); }
+  .rl-pin.rejected { background: #999; opacity: .6; }
+  .rl-pin.focus { box-shadow: 0 0 0 4px rgba(178,106,0,.3); }
+
+  /* Compose modal */
+  #rlModal {
+    background: #fff; border-radius: 14px; padding: 22px; width: 520px;
+    max-width: 94vw; max-height: 88vh; overflow: auto;
+  }
+  #rlModal h3 { font-family: 'Poppins', sans-serif; font-size: 18px; margin-bottom: 4px; }
+  #rlModal .sub { font-size: 13px; color: #666; margin-bottom: 14px; }
+  #rlModal label { display: block; font-size: 12.5px; font-weight: 600; margin: 12px 0 4px; }
+  #rlModal input[type=text], #rlModal textarea {
+    width: 100%; font-family: 'DM Sans', sans-serif; font-size: 14px;
+    padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff;
+  }
+  #rlModal textarea { min-height: 72px; resize: vertical; }
+  #rlOriginal {
+    background: #FBF4F4; border: 1px solid #e8cccc; border-radius: 8px;
+    padding: 9px 10px; font-size: 13.5px; color: #7a3b3b;
+    text-decoration: line-through; max-height: 120px; overflow: auto;
+  }
+
+  /* Sender's review panel */
+  #reviewPanel {
+    display: none; position: fixed; top: 0; right: 0; bottom: 0; width: 380px;
+    background: #fff; border-left: 1px solid var(--border); z-index: 70;
+    overflow: auto; padding: 18px 18px 90px;
+  }
+  body.review #reviewPanel { display: block; }
+  body.review #pages { padding-right: 396px; }
+  #reviewPanel h3 { font-family: 'Poppins', sans-serif; font-size: 17px; margin-bottom: 4px; }
+  #reviewPanel .sub { font-size: 13px; color: #666; margin-bottom: 14px; line-height: 1.5; }
+  .rl-card {
+    border: 1px solid var(--border); border-left: 4px solid var(--rl-red);
+    border-radius: 10px; padding: 12px; margin-bottom: 12px; cursor: pointer;
+  }
+  .rl-card.accepted { border-left-color: var(--rl-green); background: #F4FAF6; }
+  .rl-card.rejected { border-left-color: #999; background: #FAFAFA; }
+  .rl-card.comment { border-left-color: var(--rl-amber); }
+  .rl-card .who { font-size: 11.5px; color: #888; margin-bottom: 6px; }
+  .rl-card .badge {
+    display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; padding: 2px 7px; border-radius: 20px;
+    background: #eee; color: #666; margin-left: 6px;
+  }
+  .rl-card.accepted .badge { background: #DFF2E6; color: var(--rl-green); }
+  .rl-card.rejected .badge { background: #eee; color: #777; }
+  .rl-card .was { font-size: 13px; color: #7a3b3b; text-decoration: line-through; margin-bottom: 4px; }
+  .rl-card .now { font-size: 13.5px; color: var(--rl-green); font-weight: 600; margin-bottom: 6px; }
+  .rl-card .note { font-size: 13px; color: #444; font-style: italic; margin-bottom: 8px; }
+  .rl-card .reply { font-size: 12.5px; color: #555; background: #f5f5f5; border-radius: 6px; padding: 6px 8px; margin-top: 8px; }
+  .rl-card .acts { display: flex; gap: 6px; margin-top: 8px; }
+  .rl-btn {
+    font-family: 'DM Sans', sans-serif; font-size: 12.5px; font-weight: 600;
+    padding: 6px 11px; border-radius: 7px; cursor: pointer; border: 1px solid;
+  }
+  .rl-btn.acc { background: var(--rl-green); border-color: var(--rl-green); color: #fff; }
+  .rl-btn.rej { background: #fff; border-color: #bbb; color: #555; }
+  .rl-btn.undo { background: #fff; border-color: var(--border); color: #666; }
+  #reviewBar {
+    position: fixed; bottom: 0; right: 0; width: 380px; background: #fff;
+    border-top: 1px solid var(--border); border-left: 1px solid var(--border);
+    padding: 12px 18px; z-index: 71; display: none;
+  }
+  body.review #reviewBar { display: block; }
+  #reviewBar .status { font-size: 12.5px; color: #666; margin-bottom: 8px; }
+  #reviewBar .btn { width: 100%; }
+
+  /* Signer's list of decisions from the previous round */
+  #decisionsNote {
+    display: none; background: #fff; border: 1px solid var(--border);
+    border-left: 4px solid var(--teal); border-radius: 10px;
+    padding: 14px 16px; margin: 0 auto 18px; max-width: 860px; font-size: 13.5px;
+  }
+  #decisionsNote h4 { font-family: 'Poppins', sans-serif; font-size: 14px; margin-bottom: 6px; }
+  #decisionsNote li { margin: 4px 0 4px 18px; line-height: 1.5; }
+
+  @media (max-width: 900px) {
+    #reviewPanel { position: static; width: auto; border-left: none; border-top: 1px solid var(--border); padding-bottom: 20px; }
+    body.review #pages { padding-right: 0; }
+    #reviewBar { position: static; width: auto; border-left: none; }
+  }
+
+  /* ---------- incoming tracked changes (redlined .docx upload) ---------- */
+  #tcScreen { display: none; padding: 0 0 60px; }
+  body.tc #tcScreen { display: block; }
+  body.tc #uploadScreen, body.tc #workspace { display: none !important; }
+
+  #tcBar {
+    position: sticky; top: 0; z-index: 60; background: #fff;
+    border-bottom: 1px solid var(--border); padding: 12px 24px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  #tcBar .tc-title { font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 15px; }
+  #tcBar .tc-sub { font-size: 12.5px; color: #666; }
+  #tcTally { font-size: 12.5px; color: #666; margin-left: auto; }
+  .tc-btn {
+    font-family: 'DM Sans', sans-serif; font-size: 12.5px; cursor: pointer;
+    background: #fff; border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 12px; color: #333;
+  }
+  .tc-btn:hover { border-color: #999; }
+  .tc-btn.ok { border-color: var(--rl-green); color: var(--rl-green); }
+  .tc-btn.no { border-color: var(--rl-red); color: var(--rl-red); }
+
+  #tcIntro {
+    max-width: 860px; margin: 20px auto 0; background: #fff;
+    border: 1px solid var(--border); border-left: 4px solid var(--rl-red);
+    border-radius: 10px; padding: 14px 16px; font-size: 13.5px; line-height: 1.6;
+  }
+  #tcIntro h3 { font-family: 'Poppins', sans-serif; font-size: 15px; margin-bottom: 6px; }
+
+  #tcDoc {
+    max-width: 860px; margin: 18px auto; background: #fff;
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 44px 52px; font-family: Georgia, serif; font-size: 15px;
+    line-height: 1.75; color: #111;
+  }
+  #tcDoc h1, #tcDoc h2, #tcDoc h3 { font-family: 'Poppins', sans-serif; margin: 20px 0 8px; }
+  #tcDoc p { margin: 0 0 12px; }
+  #tcDoc li { margin: 0 0 6px 22px; }
+  #tcDoc table { border-collapse: collapse; margin: 0 0 12px; }
+  #tcDoc td, #tcDoc th { border: 1px solid var(--border); padding: 5px 8px; }
+
+  .tc-chg {
+    position: relative; border-radius: 3px; padding: 1px 2px;
+    background: rgba(198, 40, 40, .07); box-shadow: 0 0 0 1px rgba(198, 40, 40, .25);
+  }
+  .tc-chg .tc-del { color: var(--rl-red); text-decoration: line-through; }
+  .tc-chg .tc-ins { color: var(--rl-red); text-decoration: underline; font-weight: 500; }
+  .tc-chg .tc-del + .tc-ins { margin-left: 5px; }   /* keep old and new wording apart */
+  #btnTcApply:disabled { background: #d8d4cd; border-color: #d8d4cd; color: #8a857d; }
+  .tc-chg.decided-accept { background: rgba(27, 122, 62, .09); box-shadow: 0 0 0 1px rgba(27, 122, 62, .3); }
+  .tc-chg.decided-accept .tc-del { display: none; }
+  .tc-chg.decided-accept .tc-ins { color: var(--rl-green); text-decoration: none; font-weight: 600; }
+  .tc-chg.decided-reject { background: transparent; box-shadow: none; opacity: .5; }
+  .tc-chg.decided-reject .tc-ins { display: none; }
+  .tc-chg.decided-reject .tc-del { color: #555; text-decoration: none; }
+  .tc-chg.focus { box-shadow: 0 0 0 2px var(--teal); }
+
+  .tc-ctl {
+    display: inline-flex; align-items: center; gap: 3px;
+    vertical-align: super; margin: 0 2px; white-space: nowrap;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .tc-ctl button {
+    cursor: pointer; border: 1px solid var(--border); background: #fff;
+    border-radius: 5px; width: 20px; height: 18px; line-height: 1;
+    font-size: 11px; padding: 0; color: #666;
+  }
+  .tc-ctl .yes:hover, .tc-ctl .yes.on { background: var(--rl-green); border-color: var(--rl-green); color: #fff; }
+  .tc-ctl .no:hover, .tc-ctl .no.on { background: var(--rl-red); border-color: var(--rl-red); color: #fff; }
+  .tc-ctl .n { font-size: 10px; color: #999; margin-right: 2px; }
+
+  .tc-note {
+    display: block; margin: 8px 0 12px; padding: 8px 12px;
+    background: rgba(178, 106, 0, .07); border-left: 3px solid var(--rl-amber);
+    border-radius: 0 6px 6px 0; font-family: 'DM Sans', sans-serif; font-size: 13px;
+  }
+  .tc-note strong { color: var(--rl-amber); }
+
+  #tcFooter { max-width: 860px; margin: 0 auto; text-align: right; }
+  #tcFooter .hint { display: block; font-size: 12.5px; color: #666; margin-bottom: 8px; }
+
+  @media (max-width: 768px) {
+    #tcBar { padding: 10px 16px; }
+    #tcTally { margin-left: 0; flex-basis: 100%; }
+    #tcDoc { padding: 24px 20px; margin: 12px; }
+    #tcIntro, #tcFooter { margin: 12px; }
+  }
+
   /* Mobile responsive styles */
   @media (max-width: 768px) {
     header {
@@ -352,6 +590,10 @@
     <strong>Click to choose a file</strong> or drag it here<br>
     <span style="color:#888;font-size:13px">PDF or .docx</span>
   </div>
+  <p style="font-size:13px;color:#666;margin-top:10px">
+    Got a Word file someone sent back with <strong>tracked changes</strong>? Upload it here &mdash;
+    you'll be shown every edit and can accept or reject each one before it goes out for signature.
+  </p>
   <input type="file" id="fileInput" accept=".pdf,.docx" style="display:none">
   <div id="howItWorks">
     <strong class="hiw-title">How it works</strong>
@@ -361,6 +603,31 @@
       <div class="hiw-pose"><img src="https://gohvio.github.io/snail-sign/snail-step3.png" alt="Snail mascot with jetpack and red cape, sending"><span>3. Send</span><small>Your signers are emailed in order.</small></div>
       <div class="hiw-pose"><img src="https://gohvio.github.io/snail-sign/snail-step4.png" alt="Snail mascot celebrating a signed document with confetti"><span>4. Signed!</span><small>Everyone gets the signed PDF with a certificate of completion.</small></div>
     </div>
+  </div>
+</div>
+
+<div id="tcScreen">
+  <div id="tcBar">
+    <span class="tc-title" id="tcTitle">Tracked changes found</span>
+    <span class="tc-sub" id="tcSub"></span>
+    <button class="tc-btn ok" id="btnTcAll">&#10003; Accept all</button>
+    <button class="tc-btn no" id="btnTcNone">&#10007; Reject all</button>
+    <button class="tc-btn" id="btnTcClear">Undo my decisions</button>
+    <span id="tcTally"></span>
+  </div>
+  <div id="tcIntro">
+    <h3>Someone sent this back with edits</h3>
+    Every change they made is marked below &mdash; <span style="color:var(--rl-red);text-decoration:line-through">wording they took out</span>
+    and <span style="color:var(--rl-red);text-decoration:underline">wording they put in</span>. Use the
+    <strong>&#10003;</strong> and <strong>&#10007;</strong> buttons beside each one to accept or reject it.
+    When you're done, the document is rebuilt clean &mdash; accepted edits become the real text and all the markup disappears &mdash;
+    and every decision is recorded on the signed PDF.
+  </div>
+  <div id="tcDoc"></div>
+  <div id="tcFooter">
+    <span class="hint" id="tcFooterHint"></span>
+    <button class="btn btn-ghost" id="btnTcCancel">Start over with a different file</button>
+    <button class="btn btn-primary" id="btnTcApply">Apply and continue &rarr;</button>
   </div>
 </div>
 
@@ -390,13 +657,61 @@
     <button class="btn btn-ghost tip" id="btnLogo" style="margin-left:14px"
             data-tip="Add your business logo as a letterhead at the top of the document. It appears on every page and on the final signed PDF. Available with the $1/month subscription.">&#127912; Add my logo</button>
     <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp" style="display:none">
+    <label class="tip" id="allowRedlineWrap" style="margin-left:14px;font-size:13px;display:inline-flex;align-items:center;gap:6px;cursor:pointer"
+           data-tip="Lets any signer strike out wording and propose a replacement, or leave a comment, before they sign. Their proposed changes come back to you to accept or reject — nothing is signed until you approve.">
+      <input type="checkbox" id="allowRedline" checked style="cursor:pointer"> Allow signers to propose changes
+    </label>
   </div>
+  <!-- Signer's redline toolbar (negotiation stage) -->
+  <div id="negotiateBar">
+    <span class="hint"><strong>Not happy with the wording?</strong> Propose a change before you sign:</span>
+    <button class="rl-tool" id="btnRlEdit">&#9986; Strike out &amp; replace text</button>
+    <button class="rl-tool comment" id="btnRlComment">&#128172; Add a comment</button>
+    <span id="rlCount"></span>
+    <span class="hint" id="rlToolHint" style="flex:1;text-align:right"></span>
+  </div>
+  <div id="decisionsNote"></div>
   <div id="pages"></div>
 </div>
 
 <div id="signBar">
   <span class="progress" id="signProgress"></span>
+  <button class="btn btn-ghost" id="btnSendChanges" style="display:none">Send my changes for approval &rarr;</button>
   <button class="btn btn-coral" id="btnFinish">Finish &amp; download signed PDF</button>
+</div>
+
+<!-- Sender's accept / reject panel (review stage) -->
+<div id="reviewPanel">
+  <h3>Proposed changes</h3>
+  <p class="sub" id="reviewSub"></p>
+  <div id="reviewList"></div>
+</div>
+<div id="reviewBar">
+  <div class="status" id="reviewStatus"></div>
+  <button class="btn btn-primary" id="btnReviewSend">Send back for signature &rarr;</button>
+</div>
+
+<!-- Compose a redline / comment -->
+<div id="rlOverlay" style="position:fixed;inset:0;background:rgba(15,17,23,.6);z-index:120;display:none;align-items:center;justify-content:center">
+  <div id="rlModal">
+    <h3 id="rlModalTitle">Propose a change</h3>
+    <p class="sub" id="rlModalSub">The sender sees this and decides whether to accept it. Nothing is changed until they approve.</p>
+    <div id="rlOriginalWrap">
+      <label>Original wording (struck out)</label>
+      <div id="rlOriginal"></div>
+    </div>
+    <div id="rlProposedWrap">
+      <label for="rlProposed">Replace it with</label>
+      <input type="text" id="rlProposed" placeholder="e.g. sixty (60) days">
+    </div>
+    <label for="rlNote" id="rlNoteLabel">Reason (optional — the sender sees this)</label>
+    <textarea id="rlNote" placeholder="e.g. Our standard payment terms are 60 days."></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnRlCancel">Cancel</button>
+      <button class="btn btn-ghost" id="btnRlDelete" style="display:none;color:var(--rl-red);border-color:var(--rl-red)">Delete</button>
+      <button class="btn btn-primary" id="btnRlSave">Add proposed change</button>
+    </div>
+  </div>
 </div>
 
 <div id="modalOverlay">
@@ -431,6 +746,12 @@
       it's automatically sent to the next signer. Everyone (and you) receives the final signed PDF.
     </p>
     <div id="sendSigners"></div>
+    <div id="senderEmailWrap" style="margin-bottom:10px">
+      <label style="font-size:13px;color:#666">Your email &mdash; where proposed changes come back to</label>
+      <input type="email" id="senderEmail" placeholder="you@company.com" autocomplete="email"
+             style="width:100%;padding:11px;font-size:15px;border:1px solid var(--border);border-radius:8px;margin:4px 0 0">
+      <p style="font-size:12px;color:#888;margin:5px 0 0">If a signer proposes changes instead of signing, the document is returned here for you to accept or reject.</p>
+    </div>
     <label style="font-size:13px;color:#666">Personal message (optional, shown to Signer 1)</label>
     <textarea id="sendMessage" rows="3" placeholder="Hi Jane, here's the advisor agreement we discussed." style="width:100%;padding:11px;font-size:15px;border:1px solid var(--border);border-radius:8px;margin:4px 0 4px;font-family:'DM Sans',sans-serif;resize:vertical"></textarea>
     <p style="font-size:12px;color:#888;margin:6px 0 0">A copy of every email is BCC'd to you (the key owner).</p>
@@ -659,7 +980,8 @@ function trackEvent(ev) {
 var PRISTINE_HTML = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
 
 var state = {
-  mode: 'prep',            // 'prep' | 'sign'
+  mode: 'prep',            // 'prep' | 'sign' | 'review'
+  stage: 'prep',           // 'prep' | 'negotiate' (signer may redline) | 'review' (sender decides) | 'sign'
   pdfBase64: null,         // base64 of the underlying PDF
   docName: 'document',
   fields: [],              // {id, type, page, x, y, w, h, signer}  (fractions of page size; signer is 1-based)
@@ -668,8 +990,43 @@ var state = {
   signerIndex: 0,          // sign mode: whose turn (0-based index into signers)
   pageDims: [],            // [{w,h}] display px per page
   fieldSeq: 1,
-  logo: null               // subscriber letterhead logo (PNG data URL) or null
+  logo: null,              // subscriber letterhead logo (PNG data URL) or null
+
+  // ---- negotiation ----
+  allowRedline: true,      // sender let signers propose changes
+  redlines: [],            // see makeRedline() for the shape
+  redlineSeq: 1,
+  round: 0,                // how many times the document has gone back and forth
+  senderEmail: '',         // where proposed changes are returned to
+
+  // ---- incoming tracked changes (a .docx redlined in Word) ----
+  trackedLog: []           // [{n, type, author, date, deleted, inserted, decision}] resolved at upload
 };
+
+/* A proposed change.
+   kind 'edit'    — strike out the wording inside {x,y,w,h} and put `proposed` in its place
+   kind 'comment' — a numbered pin at {x,y} carrying `note`, no wording change
+   status         — 'open' until the sender accepts or rejects it                     */
+function makeRedline(kind, page, rect) {
+  return {
+    id: 'r' + (state.redlineSeq++) + '_' + Date.now().toString(36),
+    kind: kind, page: page,
+    x: rect.x, y: rect.y, w: rect.w || 0, h: rect.h || 0,
+    original: '', proposed: '', note: '',
+    by: state.signerIndex, byName: signerLabel(state.signerIndex + 1),
+    at: new Date().toISOString(), round: state.round,
+    status: 'open', reply: '', decidedAt: ''
+  };
+}
+function openRedlines() {
+  return state.redlines.filter(function (r) { return r.status === 'open'; });
+}
+function decidedRedlines() {
+  return state.redlines.filter(function (r) { return r.status !== 'open'; });
+}
+function redlineNumber(r) {
+  return state.redlines.indexOf(r) + 1;
+}
 
 // True when this field belongs to whoever is signing right now.
 function isMyField(f) {
@@ -685,7 +1042,6 @@ function signerLabel(n) {  // n is 1-based
 window.addEventListener('DOMContentLoaded', function () {
   var embedded = window.GOHVIO_DOC;
   if (embedded) {
-    state.mode = 'sign';
     state.pdfBase64 = embedded.pdf;
     state.docName = embedded.name;
     state.fields = embedded.fields;
@@ -694,19 +1050,48 @@ window.addEventListener('DOMContentLoaded', function () {
     state.signerIndex = embedded.signerIndex || 0;
     if (embedded.values) state.values = embedded.values;
     if (embedded.logo) state.logo = embedded.logo;
-    document.body.classList.add('sign');
+    state.redlines = embedded.redlines || [];
+    state.redlineSeq = state.redlines.length + 1;
+    state.trackedLog = embedded.trackedLog || [];
+    state.allowRedline = embedded.allowRedline !== false;
+    state.round = embedded.round || 0;
+    state.senderEmail = embedded.senderEmail || '';
+    state.stage = embedded.stage || 'sign';
+
+    var badge = document.getElementById('modeBadge');
+    badge.style.display = 'inline-block';
     var multi = state.signers.length > 1;
-    document.getElementById('modeBadge').style.display = 'inline-block';
-    document.getElementById('modeBadge').textContent = multi
-      ? 'Sign — you are signer ' + (state.signerIndex + 1) + ' of ' + state.signers.length
-      : 'Sign';
-    if (multi && state.signerIndex < state.signers.length - 1) {
-      document.getElementById('btnFinish').innerHTML = 'Finish &amp; send to next signer';
+
+    if (state.stage === 'review') {
+      // The sender opened a document that came back with proposed changes.
+      state.mode = 'review';
+      document.body.classList.add('review');
+      badge.textContent = 'Review proposed changes';
+      badge.style.background = 'var(--rl-red)';
+      document.getElementById('uploadScreen').style.display = 'none';
+      document.getElementById('toolbar').style.display = 'none';
+      document.getElementById('stepsBar').style.display = 'none';
+      document.getElementById('workspace').style.display = 'block';
+      renderPdf().then(renderReviewPanel);
+    } else {
+      state.mode = 'sign';
+      document.body.classList.add('sign');
+      if (state.allowRedline) document.body.classList.add('negotiate');
+      badge.textContent = multi
+        ? 'Sign — you are signer ' + (state.signerIndex + 1) + ' of ' + state.signers.length
+        : 'Sign';
+      if (multi && state.signerIndex < state.signers.length - 1) {
+        document.getElementById('btnFinish').innerHTML = 'Finish &amp; send to next signer';
+      }
+      document.getElementById('uploadScreen').style.display = 'none';
+      document.getElementById('toolbar').style.display = 'none';
+      document.getElementById('workspace').style.display = 'block';
+      renderPdf().then(function () {
+        updateProgress();
+        renderDecisionsNote();
+        updateRedlineUi();
+      });
     }
-    document.getElementById('uploadScreen').style.display = 'none';
-    document.getElementById('toolbar').style.display = 'none';
-    document.getElementById('workspace').style.display = 'block';
-    renderPdf().then(updateProgress);
   } else {
     document.body.classList.add('prep');
     // Tracker: count one visit per browser session (prep mode only, not signers).
@@ -736,6 +1121,9 @@ window.addEventListener('DOMContentLoaded', function () {
   });
   tintSignerSelect();
   document.getElementById('signerSelect').addEventListener('change', tintSignerSelect);
+  document.getElementById('allowRedline').addEventListener('change', function () {
+    document.getElementById('senderEmailWrap').style.display = this.checked ? 'block' : 'none';
+  });
   document.getElementById('btnStory').addEventListener('click', function () {
     document.getElementById('storyOverlay').style.display = 'flex';
   });
@@ -762,6 +1150,8 @@ window.addEventListener('DOMContentLoaded', function () {
   document.getElementById('btnPromoClose').addEventListener('click', function () {
     document.getElementById('promoCta').style.display = 'none';
   });
+  setupRedlines();
+  setupTrackedChanges();
 });
 
 // ---------- helpers ----------
@@ -819,20 +1209,451 @@ async function handleFile(file) {
     state.docName = file.name.replace(/\.(pdf|docx)$/i, '');
     var buf = await file.arrayBuffer();
     if (/\.docx$/i.test(file.name)) {
+      // A Word file that was redlined with Track Changes goes to the review
+      // screen first; prep resumes from there once every change is decided.
+      if (await tcLoad(buf)) return;
       state.pdfBase64 = await docxToPdfBase64(buf);
     } else {
       state.pdfBase64 = bytesToB64(new Uint8Array(buf));
     }
-    document.getElementById('uploadScreen').style.display = 'none';
-    document.getElementById('workspace').style.display = 'block';
-    document.getElementById('btnGenerate').style.display = 'inline-block';
-    document.getElementById('btnOpenSend').style.display = 'inline-block';
-    document.getElementById('btnRestart').style.display = 'inline-block';
-    await renderPdf();
+    await enterPrep();
   } catch (err) {
     console.error(err);
     toast('Could not read that file: ' + err.message);
   } finally { busy(false); }
+}
+
+/* Leave the upload screen and show the block-placing workspace. */
+async function enterPrep() {
+  document.body.classList.remove('tc');
+  document.getElementById('uploadScreen').style.display = 'none';
+  document.getElementById('workspace').style.display = 'block';
+  document.getElementById('btnGenerate').style.display = 'inline-block';
+  document.getElementById('btnOpenSend').style.display = 'inline-block';
+  document.getElementById('btnRestart').style.display = 'inline-block';
+  await renderPdf();
+}
+
+/* ================= incoming tracked changes (.docx redlined in Word) =================
+   A .docx is a zip. word/document.xml marks every tracked edit with <w:ins> (text
+   someone added) and <w:del> (text someone removed), plus <w:moveTo>/<w:moveFrom>
+   for moved text and an ins/del on the paragraph mark when a paragraph was split or
+   joined. We read those, show them as a Word-style redline the user can accept or
+   reject one by one, then rewrite the XML so the result is genuinely clean — accepted
+   edits become ordinary text and every trace of markup is gone. */
+
+var W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+var TC_INS = { ins: 1, moveTo: 1 };
+var TC_DEL = { del: 1, moveFrom: 1 };
+var TC_PASS = { hyperlink: 1, smartTag: 1, sdt: 1, sdtContent: 1 };   // containers to look inside
+var TC_SKIP = { bookmarkStart: 1, bookmarkEnd: 1, proofErr: 1, commentRangeStart: 1,
+                commentRangeEnd: 1, lastRenderedPageBreak: 1 };        // ignorable between changes
+var tc = null;   // {zip, xml, changes, html, comments, fmtCount}
+
+function tcKids(el) {
+  var out = [], n = el.firstChild;
+  while (n) { if (n.nodeType === 1) out.push(n); n = n.nextSibling; }
+  return out;
+}
+function tcName(el) { return el.localName || String(el.nodeName).replace(/^.*:/, ''); }
+function tcAttr(el, name) {
+  return el.getAttributeNS(W_NS, name) || el.getAttribute('w:' + name) || el.getAttribute(name) || '';
+}
+function tcFirst(el, name) {
+  var k = tcKids(el);
+  for (var i = 0; i < k.length; i++) if (tcName(k[i]) === name) return k[i];
+  return null;
+}
+function tcEscA(s) { return esc(s).replace(/"/g, '&quot;'); }
+
+/* All the visible text under a node, following runs and tracked wrappers. */
+function tcText(el) {
+  var s = '';
+  tcKids(el).forEach(function (c) {
+    var l = tcName(c);
+    if (l === 't' || l === 'delText') s += c.textContent;
+    else if (l === 'tab') s += ' ';
+    else if (l === 'br' || l === 'cr') s += ' ';
+    else if (l === 'noBreakHyphen') s += '-';
+    else if (l === 'r' || TC_PASS[l] || TC_INS[l] || TC_DEL[l]) s += tcText(c);
+  });
+  return s;
+}
+
+/* An untracked run, as HTML. */
+function tcRunHtml(r) {
+  var rPr = tcFirst(r, 'rPr');
+  var b = rPr && tcFirst(rPr, 'b'), i = rPr && tcFirst(rPr, 'i'), u = rPr && tcFirst(rPr, 'u');
+  var t = esc(tcText(r));
+  if (!t) return '';
+  if (u) t = '<u>' + t + '</u>';
+  if (i) t = '<em>' + t + '</em>';
+  if (b) t = '<strong>' + t + '</strong>';
+  return t;
+}
+
+function tcAdd(changes, o) { o.n = changes.length + 1; o.decision = ''; changes.push(o); return o; }
+
+/* The clickable wrapper around one change. */
+function tcChgHtml(ch, inner, label) {
+  return '<span class="tc-chg" data-tc="' + ch.n + '" id="tcc' + ch.n + '">' + inner +
+    '<span class="tc-ctl">' +
+      '<span class="n"' + (label ? ' title="' + tcEscA(label) + '"' : '') + '>' + ch.n + '</span>' +
+      '<button type="button" class="yes" data-tc="' + ch.n + '" data-d="accept" title="Accept this change">&#10003;</button>' +
+      '<button type="button" class="no" data-tc="' + ch.n + '" data-d="reject" title="Reject this change">&#10007;</button>' +
+    '</span></span>';
+}
+
+/* Runs of consecutive tracked siblings become ONE change, so a delete
+   immediately followed by an insert reads as a single replacement. */
+function tcGroupHtml(group, changes) {
+  var delTxt = '', insTxt = '', nodes = [], author = '', date = '', moved = false;
+  group.forEach(function (el) {
+    var l = tcName(el), kind = TC_INS[l] ? 'ins' : 'del';
+    var t = tcText(el);
+    if (kind === 'ins') insTxt += t; else delTxt += t;
+    if (!author) { author = tcAttr(el, 'author'); date = tcAttr(el, 'date'); }
+    if (l === 'moveTo' || l === 'moveFrom') moved = true;
+    nodes.push({ el: el, kind: kind });
+  });
+  var type = (delTxt && insTxt) ? 'replace' : (insTxt ? 'insert' : 'delete');
+  var ch = tcAdd(changes, { type: type, moved: moved, author: author, date: date,
+                            deleted: delTxt, inserted: insTxt, nodes: nodes });
+  var inner = '';
+  if (delTxt) inner += '<span class="tc-del">' + esc(delTxt) + '</span>';
+  if (insTxt) inner += '<span class="tc-ins">' + esc(insTxt) + '</span>';
+  if (!inner) inner = '<span class="tc-ins">[content]</span>';
+  return tcChgHtml(ch, inner);
+}
+
+function tcInlineHtml(container, changes) {
+  var kids = tcKids(container).filter(function (c) { return tcName(c) !== 'pPr'; });
+  var out = '', i = 0;
+  while (i < kids.length) {
+    var l = tcName(kids[i]);
+    if (TC_INS[l] || TC_DEL[l]) {
+      var group = [], j = i;
+      while (j < kids.length) {
+        var lj = tcName(kids[j]);
+        if (TC_INS[lj] || TC_DEL[lj]) { group.push(kids[j]); j++; }
+        else if (TC_SKIP[lj]) { j++; }
+        else break;
+      }
+      out += tcGroupHtml(group, changes);
+      i = j; continue;
+    }
+    if (l === 'r') out += tcRunHtml(kids[i]);
+    else if (TC_PASS[l]) out += tcInlineHtml(kids[i], changes);
+    i++;
+  }
+  return out;
+}
+
+/* Any Word comments anchored in this paragraph, shown after it. */
+function tcParaComments(p, comments) {
+  var out = '';
+  var refs = p.getElementsByTagNameNS(W_NS, 'commentReference');
+  for (var i = 0; i < refs.length; i++) {
+    var cm = comments[tcAttr(refs[i], 'id')];
+    if (!cm || !cm.text) continue;
+    out += '<span class="tc-note"><strong>Comment' +
+      (cm.author ? ' from ' + esc(cm.author) : '') + ':</strong> ' + esc(cm.text) + '</span>';
+  }
+  return out;
+}
+
+function tcParaHtml(p, changes, comments) {
+  var pPr = tcFirst(p, 'pPr');
+  var styleEl = pPr && tcFirst(pPr, 'pStyle');
+  var style = styleEl ? tcAttr(styleEl, 'val') : '';
+  var isList = !!(pPr && tcFirst(pPr, 'numPr'));
+  var jcEl = pPr && tcFirst(pPr, 'jc');
+  var align = jcEl ? tcAttr(jcEl, 'val') : '';
+  var tag = 'p', m = /^Heading\s*(\d)$/i.exec(style);
+  if (m) tag = 'h' + Math.min(4, parseInt(m[1], 10) + 1);
+  else if (/^Title$/i.test(style)) tag = 'h1';
+  var sty = /^(center|right)$/.test(align) ? ' style="text-align:' + align + '"' : '';
+
+  var inner = tcInlineHtml(p, changes);
+
+  // ins/del on the paragraph mark = a paragraph break added or taken away.
+  var rPr = pPr && tcFirst(pPr, 'rPr');
+  var mIns = rPr && tcFirst(rPr, 'ins');
+  var mDel = rPr && tcFirst(rPr, 'del');
+  if (mIns || mDel) {
+    var node = mIns || mDel;
+    var ch = tcAdd(changes, {
+      type: mIns ? 'split' : 'merge', author: tcAttr(node, 'author'), date: tcAttr(node, 'date'),
+      deleted: '', inserted: '',
+      nodes: [{ el: node, kind: 'mark', mark: mIns ? 'ins' : 'del', para: p }]
+    });
+    var label = mIns ? 'They split this into a new paragraph here'
+                     : 'They joined this paragraph to the next one';
+    inner += tcChgHtml(ch, '<span class="tc-ins">&#182;</span>', label);
+  }
+
+  var html = (isList ? '<li' + sty + '>' : '<' + tag + sty + '>') +
+             (inner || '&nbsp;') +
+             (isList ? '</li>' : '</' + tag + '>');
+  return { isList: isList, html: html + tcParaComments(p, comments) };
+}
+
+function tcTableHtml(tbl, changes, comments) {
+  var out = '<table>';
+  tcKids(tbl).forEach(function (tr) {
+    if (tcName(tr) !== 'tr') return;
+    out += '<tr>';
+    tcKids(tr).forEach(function (td) {
+      if (tcName(td) !== 'tc') return;
+      var cell = '';
+      tcKids(td).forEach(function (c) {
+        var l = tcName(c);
+        if (l === 'p') cell += tcParaHtml(c, changes, comments).html;
+        else if (l === 'tbl') cell += tcTableHtml(c, changes, comments);
+      });
+      out += '<td>' + cell + '</td>';
+    });
+    out += '</tr>';
+  });
+  return out + '</table>';
+}
+
+/* Walk the body in reading order, producing the redline HTML and the change list.
+   Change numbers therefore run top-to-bottom through the document. */
+function tcBuildView(xml, comments) {
+  var body = xml.getElementsByTagNameNS(W_NS, 'body')[0] || xml.documentElement;
+  var changes = [], html = [], listOpen = false;
+  function closeList() { if (listOpen) { html.push('</ul>'); listOpen = false; } }
+  tcKids(body).forEach(function (el) {
+    var l = tcName(el);
+    if (l === 'p') {
+      var info = tcParaHtml(el, changes, comments);
+      if (info.isList) { if (!listOpen) { html.push('<ul>'); listOpen = true; } html.push(info.html); }
+      else { closeList(); html.push(info.html); }
+    } else if (l === 'tbl') {
+      closeList(); html.push(tcTableHtml(el, changes, comments));
+    }
+  });
+  closeList();
+  var fmt = 0;
+  ['rPrChange', 'pPrChange', 'tblPrChange', 'trPrChange', 'tcPrChange', 'sectPrChange']
+    .forEach(function (n) { fmt += xml.getElementsByTagNameNS(W_NS, n).length; });
+  return { html: html.join('\n'), changes: changes, fmtCount: fmt };
+}
+
+async function tcLoadComments(zip) {
+  var map = {}, f = zip.file('word/comments.xml');
+  if (!f) return map;
+  try {
+    var xml = new DOMParser().parseFromString(await f.async('string'), 'application/xml');
+    var list = xml.getElementsByTagNameNS(W_NS, 'comment');
+    for (var i = 0; i < list.length; i++) {
+      map[tcAttr(list[i], 'id')] = {
+        author: tcAttr(list[i], 'author'),
+        text: String(list[i].textContent || '').replace(/\s+/g, ' ').trim()
+      };
+    }
+  } catch (e) { /* comments are a nicety — never fail the upload over them */ }
+  return map;
+}
+
+/* Returns true if the file had tracked changes and the review screen is now up. */
+async function tcLoad(buf) {
+  if (typeof JSZip === 'undefined') return false;
+  var zip, xmlText;
+  try {
+    zip = await JSZip.loadAsync(buf);
+    var f = zip.file('word/document.xml');
+    if (!f) return false;
+    xmlText = await f.async('string');
+  } catch (e) { return false; }
+  // Cheap pre-check. The character class after the name stops <w:insideH> and
+  // <w:delText> from giving false positives.
+  if (!/<w:(ins|del|moveTo|moveFrom)[\s/>]/.test(xmlText)) return false;
+  var xml = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (xml.getElementsByTagName('parsererror').length) return false;
+  var comments = await tcLoadComments(zip);
+  var view = tcBuildView(xml, comments);
+  if (!view.changes.length) return false;
+  tc = { zip: zip, xml: xml, changes: view.changes, html: view.html,
+         comments: comments, fmtCount: view.fmtCount };
+  tcShow();
+  return true;
+}
+
+function tcShow() {
+  document.getElementById('tcDoc').innerHTML = tc.html;
+  var authors = {}, n = 0;
+  tc.changes.forEach(function (c) { if (c.author && !authors[c.author]) { authors[c.author] = 1; n++; } });
+  var who = Object.keys(authors);
+  var bits = [tc.changes.length + ' tracked change' + (tc.changes.length === 1 ? '' : 's')];
+  if (who.length) bits.push('by ' + who.slice(0, 3).join(', ') + (who.length > 3 ? ' and others' : ''));
+  var cCount = Object.keys(tc.comments).length;
+  if (cCount) bits.push(cCount + ' comment' + (cCount === 1 ? '' : 's'));
+  if (tc.fmtCount) bits.push(tc.fmtCount + ' formatting change' + (tc.fmtCount === 1 ? '' : 's') + ' (kept as-is)');
+  document.getElementById('tcSub').textContent = bits.join(' · ');
+  document.getElementById('tcTitle').textContent = 'Review the changes to ' + state.docName;
+  document.body.classList.add('tc');
+  window.scrollTo(0, 0);
+  tcSync();
+}
+
+function tcDecide(n, d) {
+  var ch = tc.changes[n - 1];
+  if (!ch) return;
+  ch.decision = (ch.decision === d) ? '' : d;   // click again to undo
+  tcSync();
+}
+function tcAll(d) { tc.changes.forEach(function (c) { c.decision = d; }); tcSync(); }
+
+function tcSync() {
+  var left = 0;
+  tc.changes.forEach(function (ch) {
+    if (!ch.decision) left++;
+    var el = document.getElementById('tcc' + ch.n);
+    if (!el) return;
+    el.classList.toggle('decided-accept', ch.decision === 'accept');
+    el.classList.toggle('decided-reject', ch.decision === 'reject');
+    var yes = el.querySelector('.tc-ctl .yes'), no = el.querySelector('.tc-ctl .no');
+    if (yes) yes.classList.toggle('on', ch.decision === 'accept');
+    if (no) no.classList.toggle('on', ch.decision === 'reject');
+  });
+  var acc = tc.changes.filter(function (c) { return c.decision === 'accept'; }).length;
+  var rej = tc.changes.filter(function (c) { return c.decision === 'reject'; }).length;
+  document.getElementById('tcTally').innerHTML =
+    '<strong>' + acc + '</strong> accepted &nbsp;·&nbsp; <strong>' + rej + '</strong> rejected' +
+    (left ? ' &nbsp;·&nbsp; <strong style="color:var(--rl-red)">' + left + '</strong> still to decide' : '');
+  var btn = document.getElementById('btnTcApply');
+  btn.disabled = left > 0;
+  btn.style.cursor = left > 0 ? 'not-allowed' : 'pointer';
+  document.getElementById('tcFooterHint').textContent = left
+    ? 'Decide the remaining ' + left + ' change' + (left === 1 ? '' : 's') +
+      ' to continue — or use Accept all / Reject all at the top.'
+    : 'All ' + tc.changes.length + ' changes decided. The document will be rebuilt clean, with your decisions recorded on the signed PDF.';
+}
+
+/* ---- applying the decisions to the XML ---- */
+
+function tcRemove(el) { if (el && el.parentNode) el.parentNode.removeChild(el); }
+
+/* Replace a wrapper with its own children, so the text survives untracked. */
+function tcUnwrap(el, wasDeletion) {
+  var parent = el && el.parentNode;
+  if (!parent) return;
+  if (wasDeletion) tcDelTextToT(el);
+  while (el.firstChild) parent.insertBefore(el.firstChild, el);
+  parent.removeChild(el);
+}
+
+/* Text inside <w:del> is stored as <w:delText>. Keeping that text means
+   turning it back into ordinary <w:t>, or Word (and mammoth) won't show it. */
+function tcDelTextToT(root) {
+  [['delText', 't'], ['delInstrText', 'instrText']].forEach(function (pair) {
+    var els = root.getElementsByTagNameNS(W_NS, pair[0]);
+    for (var i = els.length - 1; i >= 0; i--) {
+      var d = els[i], doc = d.ownerDocument;
+      var t = doc.createElementNS(W_NS, 'w:' + pair[1]);
+      for (var a = 0; a < d.attributes.length; a++) t.setAttribute(d.attributes[a].name, d.attributes[a].value);
+      t.setAttribute('xml:space', 'preserve');
+      t.appendChild(doc.createTextNode(d.textContent));
+      d.parentNode.replaceChild(t, d);
+    }
+  });
+}
+
+/* Drop the break at the end of this paragraph: its content moves to the front
+   of the next one and the paragraph itself goes away. */
+function tcMergePara(p) {
+  var next = p.nextSibling;
+  while (next && !(next.nodeType === 1 && tcName(next) === 'p')) next = next.nextSibling;
+  if (!next) return;                       // nothing after it — leave the break alone
+  var pPrNext = tcFirst(next, 'pPr');
+  var anchor = pPrNext ? pPrNext.nextSibling : next.firstChild;
+  tcKids(p).forEach(function (c) {
+    if (tcName(c) === 'pPr') return;
+    next.insertBefore(c, anchor);
+  });
+  tcRemove(p);
+}
+
+async function tcApply() {
+  busy(true);
+  try {
+    var xml = tc.xml;
+
+    // 1. Run-level edits. Keep an insertion only if accepted; keep a deletion
+    //    only if rejected. Everything else is removed outright.
+    tc.changes.forEach(function (ch) {
+      if (ch.type === 'split' || ch.type === 'merge') return;
+      ch.nodes.forEach(function (nd) {
+        var keep = (nd.kind === 'ins') ? (ch.decision === 'accept') : (ch.decision === 'reject');
+        if (keep) tcUnwrap(nd.el, nd.kind === 'del'); else tcRemove(nd.el);
+      });
+    });
+
+    // 2. Paragraph-mark edits, last first, so merging never shifts a pending one.
+    tc.changes.filter(function (c) { return c.type === 'split' || c.type === 'merge'; })
+      .slice().reverse().forEach(function (ch) {
+        var nd = ch.nodes[0];
+        tcRemove(nd.el);
+        var merge = (nd.mark === 'ins' && ch.decision === 'reject') ||
+                    (nd.mark === 'del' && ch.decision === 'accept');
+        if (merge) tcMergePara(nd.para);
+      });
+
+    // 3. Strip formatting-revision and comment scaffolding so the result is
+    //    a plain document with no revision history left in it.
+    ['rPrChange', 'pPrChange', 'tblPrChange', 'trPrChange', 'tcPrChange', 'sectPrChange',
+     'commentRangeStart', 'commentRangeEnd', 'commentReference', 'moveFromRangeStart',
+     'moveFromRangeEnd', 'moveToRangeStart', 'moveToRangeEnd']
+      .forEach(function (name) {
+        var els = xml.getElementsByTagNameNS(W_NS, name);
+        for (var i = els.length - 1; i >= 0; i--) tcRemove(els[i]);
+      });
+
+    // 4. Keep the decisions for the audit trail on the signed PDF.
+    state.trackedLog = tc.changes.map(function (ch) {
+      return { n: ch.n, type: ch.type, author: ch.author || '', date: ch.date || '',
+               deleted: ch.deleted, inserted: ch.inserted, decision: ch.decision };
+    });
+
+    var out = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' +
+              new XMLSerializer().serializeToString(xml.documentElement);
+    tc.zip.file('word/document.xml', out);
+    var clean = await tc.zip.generateAsync({ type: 'arraybuffer' });
+
+    state.pdfBase64 = await docxToPdfBase64(clean);
+    tc = null;
+    await enterPrep();
+    var a = state.trackedLog.filter(function (c) { return c.decision === 'accept'; }).length;
+    toast('Rebuilt clean — ' + a + ' change(s) accepted, ' + (state.trackedLog.length - a) +
+          ' rejected. Now place the blocks your signer needs to fill.');
+  } catch (err) {
+    console.error(err);
+    toast('Could not rebuild the document: ' + err.message);
+  } finally { busy(false); }
+}
+
+function setupTrackedChanges() {
+  var docEl = document.getElementById('tcDoc');
+  docEl.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-tc]');
+    if (!b) return;
+    e.preventDefault();
+    tcDecide(parseInt(b.getAttribute('data-tc'), 10), b.getAttribute('data-d'));
+  });
+  document.getElementById('btnTcAll').addEventListener('click', function () { tcAll('accept'); });
+  document.getElementById('btnTcNone').addEventListener('click', function () { tcAll('reject'); });
+  document.getElementById('btnTcClear').addEventListener('click', function () { tcAll(''); });
+  document.getElementById('btnTcApply').addEventListener('click', function () {
+    if (!document.getElementById('btnTcApply').disabled) tcApply();
+  });
+  document.getElementById('btnTcCancel').addEventListener('click', function () {
+    tc = null;
+    document.body.classList.remove('tc');
+    document.getElementById('uploadScreen').style.display = 'block';
+    document.getElementById('fileInput').value = '';
+  });
 }
 
 // Convert .docx -> HTML (mammoth) -> paginated page divs (break BETWEEN
@@ -961,12 +1782,11 @@ async function renderPdf() {
     var page = await pdf.getPage(i);
     var vp1 = page.getViewport({ scale: 1 });
     var scale = displayW / vp1.width;
-    // text-line map for smart block snapping (prep mode; best-effort —
-    // scanned or docx-converted pages have no text layer and that's fine)
-    if (state.mode === 'prep') {
-      try { state.pageLines.push(await extractTextLines(page, scale, vp1.height)); }
-      catch (tlErr) { state.pageLines.push([]); }
-    } else { state.pageLines.push([]); }
+    // Text-line map. Prep mode uses it to snap dropped blocks to lines; sign and
+    // review modes use it to read back the original wording under a redline.
+    // Best-effort — scanned or docx-converted pages have no text layer, and that's fine.
+    try { state.pageLines.push(await extractTextLines(page, scale, vp1.height)); }
+    catch (tlErr) { state.pageLines.push([]); }
     var displayH = vp1.height * scale;
     // Render at 2x for sharpness, but stay under browser canvas limits
     // (Safari caps canvas area ~16.7M px and dimensions ~8192px).
@@ -997,6 +1817,10 @@ async function renderPdf() {
   }
   // draw existing fields (sign mode)
   state.fields.forEach(function (f) { mountField(f); });
+
+  // draw proposed changes on top of the pages
+  state.redlines.forEach(mountRedline);
+  if (state.mode !== 'prep') enableRedlineDraw();
 
   // subscriber letterhead on page 1
   renderLogoOverlay();
@@ -1062,6 +1886,7 @@ async function extractTextLines(page, k, pageH1) {
     var seg = {
       x0: it.transform[4] * k,
       x1: (it.transform[4] + it.width) * k,
+      str: it.str,
       blank: /^[\s._…─-╿]+$/.test(it.str) && /[._─-╿]{3}/.test(it.str)
     };
     var top = (pageH1 - it.transform[5] - ih) * k;
@@ -1205,6 +2030,24 @@ function mountField(f) {
     rz.className = 'resizer';
     el.appendChild(rz);
     makeDraggable(el, f, rz);
+  } else if (state.mode === 'review') {
+    // Sender reviewing proposed changes: fields are context only, not editable.
+    el.style.opacity = '.5';
+    el.style.pointerEvents = 'none';
+    var vr = state.values[f.id];
+    if (vr) {
+      el.innerHTML = '';
+      el.classList.add('filled');
+      if (vr.sigDataUrl) {
+        var imr = document.createElement('img');
+        imr.className = 'sig-img'; imr.src = vr.sigDataUrl;
+        el.appendChild(imr);
+      } else {
+        var spr = document.createElement('span');
+        spr.className = 'lockedText'; spr.textContent = vr.text || '';
+        el.appendChild(spr);
+      }
+    }
   } else {
     var v = state.values[f.id];
     if (v && !isMyField(f)) {
@@ -1274,7 +2117,10 @@ function buildSigningHtml(extra) {
   var doc = {
     name: state.docName,
     pdf: state.pdfBase64,
-    fields: state.fields
+    fields: state.fields,
+    // Decisions on redlines that arrived in the uploaded Word file travel with
+    // the document, so whoever produces the final PDF can print the schedule.
+    trackedLog: state.trackedLog || []
   };
   if (extra) for (var k in extra) doc[k] = extra[k];
   var inject = '<script id="embedSlot">window.GOHVIO_DOC=' +
@@ -1291,7 +2137,13 @@ function generateSigningFile() {
   // embed credentials if already saved (so Finish can email copies); don't prompt here
   var key = getEsignKey();
   var freeEmail = key ? '' : getFreeEmail();
-  var extra = {};
+  var extra = {
+    stage: 'sign',
+    allowRedline: document.getElementById('allowRedline').checked,
+    redlines: [],
+    round: 0,
+    senderEmail: (document.getElementById('senderEmail').value || '').trim().toLowerCase() || freeEmail || ''
+  };
   if (key) { extra.key = key; if (state.logo) extra.logo = state.logo; }
   else if (freeEmail) { extra.freeEmail = freeEmail; }
   var html = buildSigningHtml(extra);
@@ -1330,6 +2182,14 @@ function openSendModal() {
     box.appendChild(row);
   });
   document.getElementById('sendOrderNote').style.display = used.length > 1 ? 'block' : 'none';
+  // Remember the sender's own address between documents — it's where redlines return to.
+  var se = document.getElementById('senderEmail');
+  if (!se.value) {
+    try { se.value = localStorage.getItem('gohvioSenderEmail') || getFreeEmail() || ''; }
+    catch (e) { /* no-op */ }
+  }
+  document.getElementById('senderEmailWrap').style.display =
+    document.getElementById('allowRedline').checked ? 'block' : 'none';
   document.getElementById('sendOverlay').style.display = 'flex';
   setStep(3);
   setTimeout(function () { var f = box.querySelector('input'); if (f) f.focus(); }, 50);
@@ -1365,6 +2225,14 @@ async function sendForSignature() {
   var remap = {};
   used.forEach(function (n, i) { remap[n] = i + 1; });
   state.fields.forEach(function (f) { f.signer = remap[f.signer || 1]; });
+  var senderEmail = (document.getElementById('senderEmail').value || '').trim().toLowerCase() || freeEmail || '';
+  var allowRedline = document.getElementById('allowRedline').checked;
+  if (allowRedline && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(senderEmail)) {
+    toast('Enter your own email too — that is where proposed changes come back to. ' +
+          '(Or untick “Allow signers to propose changes”.)');
+    return;
+  }
+  try { localStorage.setItem('gohvioSenderEmail', senderEmail); } catch (e) { /* no-op */ }
   var html = buildSigningHtml({
     key: key,
     freeEmail: freeEmail,
@@ -1372,6 +2240,11 @@ async function sendForSignature() {
     signers: signers,
     signerIndex: 0,
     values: {},
+    stage: 'sign',
+    allowRedline: allowRedline,
+    redlines: [],
+    round: 0,
+    senderEmail: senderEmail,
     signerEmail: signers[0].email  // legacy fallback for single-signer flow
   });
   if (!html) { toast('Internal error: embed slot not found.'); return; }
@@ -1566,11 +2439,600 @@ function applySignature() {
   updateProgress();
 }
 
+/* ============================================================================
+   REDLINE & NEGOTIATION
+   A signer can strike out wording and propose a replacement, or drop a comment,
+   instead of signing. Those proposals travel back to the sender, who accepts or
+   rejects each one. Only when nothing is left open can the document be signed.
+   ==========================================================================*/
+
+var rlTool = null;        // null | 'edit' | 'comment' — which tool is armed
+var rlEditing = null;     // the redline currently open in the modal
+var rlIsNew = false;
+
+function setupRedlines() {
+  var bEdit = document.getElementById('btnRlEdit');
+  var bComment = document.getElementById('btnRlComment');
+  if (bEdit) bEdit.addEventListener('click', function () { armTool(rlTool === 'edit' ? null : 'edit'); });
+  if (bComment) bComment.addEventListener('click', function () { armTool(rlTool === 'comment' ? null : 'comment'); });
+
+  document.getElementById('btnRlCancel').addEventListener('click', closeRedlineModal);
+  document.getElementById('btnRlSave').addEventListener('click', saveRedlineModal);
+  document.getElementById('btnRlDelete').addEventListener('click', function () {
+    if (!rlEditing) return;
+    state.redlines = state.redlines.filter(function (x) { return x.id !== rlEditing.id; });
+    closeRedlineModal();
+    refreshRedlines();
+    updateRedlineUi();
+  });
+  document.getElementById('btnSendChanges').addEventListener('click', sendChangesBack);
+  document.getElementById('btnReviewSend').addEventListener('click', sendBackForSignature);
+  // Escape cancels an armed tool
+  window.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && rlTool) armTool(null);
+  });
+}
+
+function armTool(kind) {
+  rlTool = kind;
+  document.getElementById('btnRlEdit').classList.toggle('active', kind === 'edit');
+  document.getElementById('btnRlComment').classList.toggle('active', kind === 'comment');
+  document.body.classList.toggle('rl-arming', !!kind);
+  var hint = document.getElementById('rlToolHint');
+  hint.textContent = kind === 'edit'
+    ? 'Now drag across the wording you want to change. Press Esc to cancel.'
+    : kind === 'comment'
+      ? 'Now click the spot you want to comment on. Press Esc to cancel.'
+      : '';
+}
+
+/* Take the part of one text run that falls inside [x0,x1].
+   PDF text runs are often a whole line, so selecting "thirty (30) days" out of
+   "Invoices are payable within thirty (30) days" means cutting the run down by
+   width. Characters are assumed evenly spaced (good enough), then the cut is
+   pushed out to the nearest word boundary so we never return half a word. */
+function sliceSegment(s, x0, x1) {
+  var str = s.str || '';
+  var w = s.x1 - s.x0;
+  if (!str || w <= 0) return str;
+  if (x0 <= s.x0 && x1 >= s.x1) return str;              // run fully selected
+  var a = Math.max(0, (x0 - s.x0) / w);
+  var b = Math.min(1, (x1 - s.x0) / w);
+  if (b <= a) return '';
+  var i = Math.floor(a * str.length);
+  var j = Math.ceil(b * str.length);
+  while (i > 0 && !/\s/.test(str.charAt(i - 1))) i--;     // grow left to word start
+  while (j < str.length && !/\s/.test(str.charAt(j))) j++; // grow right to word end
+  return str.slice(i, j);
+}
+
+/* Read back the wording sitting under a rectangle, using the PDF's text layer.
+   Returns '' for scanned pages with no text layer — the signer can still type
+   what the original said. */
+function originalTextIn(pageIdx, rect) {
+  var lines = (state.pageLines && state.pageLines[pageIdx]) || [];
+  var x0 = rect.x, x1 = rect.x + rect.w;
+  var out = [];
+  lines.forEach(function (L) {
+    if (L.bottom < rect.y || L.top > rect.y + rect.h) return;   // line not in the band
+    var parts = L.segs
+      .filter(function (s) { return s.x1 > x0 && s.x0 < x1; })
+      .sort(function (a, b) { return a.x0 - b.x0; })
+      .map(function (s) { return sliceSegment(s, x0, x1); })
+      .filter(function (t) { return t && t.trim(); });
+    if (parts.length) out.push(parts.join(''));
+  });
+  return out.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/* Rubber-band selection (edit tool) and click-to-place (comment tool). */
+function enableRedlineDraw() {
+  document.querySelectorAll('#pages .page-wrap').forEach(function (wrap) {
+    if (wrap.dataset.rlBound) return;
+    wrap.dataset.rlBound = '1';
+    wrap.addEventListener('pointerdown', function (e) {
+      if (!rlTool || state.mode === 'prep') return;
+      e.preventDefault();
+      var pageIdx = parseInt(wrap.dataset.page, 10);
+      var d = state.pageDims[pageIdx];
+      var box = wrap.getBoundingClientRect();
+      var sx = e.clientX - box.left, sy = e.clientY - box.top;
+
+      if (rlTool === 'comment') {
+        var rc = makeRedline('comment', pageIdx, { x: sx / d.w, y: sy / d.h });
+        armTool(null);
+        openRedlineModal(rc, true);
+        return;
+      }
+
+      var band = document.createElement('div');
+      band.className = 'rl-rubber';
+      wrap.appendChild(band);
+      function move(ev) {
+        var cx = Math.min(Math.max(ev.clientX - box.left, 0), d.w);
+        var cy = Math.min(Math.max(ev.clientY - box.top, 0), d.h);
+        band.style.left = Math.min(sx, cx) + 'px';
+        band.style.top = Math.min(sy, cy) + 'px';
+        band.style.width = Math.abs(cx - sx) + 'px';
+        band.style.height = Math.abs(cy - sy) + 'px';
+      }
+      function up(ev) {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        var cx = Math.min(Math.max(ev.clientX - box.left, 0), d.w);
+        var cy = Math.min(Math.max(ev.clientY - box.top, 0), d.h);
+        var rx = Math.min(sx, cx), ry = Math.min(sy, cy);
+        var rw = Math.abs(cx - sx), rh = Math.abs(cy - sy);
+        band.remove();
+        if (rw < 8 || rh < 5) {
+          toast('Drag across the wording you want to change — a single click is too small to select text.');
+          return;
+        }
+        armTool(null);
+        var r = makeRedline('edit', pageIdx, { x: rx / d.w, y: ry / d.h, w: rw / d.w, h: rh / d.h });
+        r.original = originalTextIn(pageIdx, { x: rx, y: ry, w: rw, h: rh });
+        openRedlineModal(r, true);
+      }
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    });
+  });
+}
+
+function openRedlineModal(r, isNew) {
+  rlEditing = r; rlIsNew = !!isNew;
+  var isComment = r.kind === 'comment';
+  document.getElementById('rlModalTitle').textContent = isComment ? 'Add a comment' : 'Propose a change';
+  document.getElementById('rlModalSub').textContent = isComment
+    ? 'A numbered note for the sender. It does not change the wording of the document.'
+    : 'The sender decides whether to accept this. The document is not changed until they do.';
+  document.getElementById('rlOriginalWrap').style.display = isComment ? 'none' : 'block';
+  document.getElementById('rlProposedWrap').style.display = isComment ? 'none' : 'block';
+  document.getElementById('rlOriginal').textContent = r.original ||
+    '(no selectable text here — describe the change below)';
+  document.getElementById('rlProposed').value = r.proposed || '';
+  document.getElementById('rlNote').value = r.note || '';
+  document.getElementById('rlNoteLabel').textContent = isComment
+    ? 'Your comment' : 'Reason (optional — the sender sees this)';
+  document.getElementById('rlNote').placeholder = isComment
+    ? 'e.g. Who is responsible for insurance during the handover period?'
+    : 'e.g. Our standard payment terms are 60 days.';
+  document.getElementById('btnRlSave').textContent = isNew
+    ? (isComment ? 'Add comment' : 'Add proposed change') : 'Save';
+  document.getElementById('btnRlDelete').style.display = isNew ? 'none' : 'inline-block';
+  document.getElementById('rlOverlay').style.display = 'flex';
+  setTimeout(function () {
+    document.getElementById(isComment ? 'rlNote' : 'rlProposed').focus();
+  }, 50);
+}
+
+function closeRedlineModal() {
+  document.getElementById('rlOverlay').style.display = 'none';
+  rlEditing = null; rlIsNew = false;
+}
+
+function saveRedlineModal() {
+  if (!rlEditing) return;
+  var r = rlEditing;
+  var proposed = document.getElementById('rlProposed').value.trim();
+  var note = document.getElementById('rlNote').value.trim();
+  if (r.kind === 'comment' && !note) { toast('Type your comment first.'); return; }
+  if (r.kind === 'edit' && !proposed && !note) {
+    toast('Type the replacement wording (or explain the change in the reason box).');
+    return;
+  }
+  r.proposed = proposed; r.note = note;
+  r.at = new Date().toISOString();
+  if (rlIsNew) state.redlines.push(r);
+  closeRedlineModal();
+  refreshRedlines();
+  updateRedlineUi();
+  if (rlIsNew) toast('Proposed change added. Add more, then send them to the sender for approval.');
+}
+
+function mountRedline(r) {
+  var wrap = document.querySelector('.page-wrap[data-page="' + r.page + '"]');
+  if (!wrap) return;
+  var d = state.pageDims[r.page];
+  var n = redlineNumber(r);
+  var el = document.createElement('div');
+  el.dataset.rl = r.id;
+  var statusCls = r.status !== 'open' ? ' ' + r.status : '';
+
+  if (r.kind === 'comment') {
+    el.className = 'rl-pin' + statusCls;
+    el.style.left = (r.x * d.w - 13) + 'px';
+    el.style.top = (r.y * d.h - 13) + 'px';
+    el.textContent = n;
+    el.title = 'Comment ' + n + ' from ' + r.byName + ': ' + r.note;
+  } else {
+    el.className = 'redline' + statusCls;
+    el.style.left = (r.x * d.w) + 'px';
+    el.style.top = (r.y * d.h) + 'px';
+    el.style.width = (r.w * d.w) + 'px';
+    el.style.height = (r.h * d.h) + 'px';
+    var strike = document.createElement('div');
+    strike.className = 'rl-strike';
+    el.appendChild(strike);
+    var num = document.createElement('span');
+    num.className = 'rl-num'; num.textContent = n;
+    el.appendChild(num);
+    if (r.proposed) {
+      var nw = document.createElement('div');
+      nw.className = 'rl-new';
+      nw.textContent = (r.status === 'rejected' ? '' : '') + r.proposed;
+      el.appendChild(nw);
+    }
+    el.title = 'Change ' + n + ' from ' + r.byName +
+      (r.original ? '\nWas: ' + r.original : '') +
+      (r.proposed ? '\nProposed: ' + r.proposed : '') +
+      (r.note ? '\nReason: ' + r.note : '');
+  }
+  el.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (state.mode === 'review') { focusRedlineCard(r); return; }
+    if (r.status === 'open' && r.by === state.signerIndex) openRedlineModal(r, false);
+    else toast(r.status === 'open'
+      ? 'This change was proposed by ' + r.byName + '.'
+      : 'This change was ' + r.status + ' by the sender.');
+  });
+  wrap.appendChild(el);
+}
+
+function refreshRedlines() {
+  document.querySelectorAll('#pages .redline, #pages .rl-pin').forEach(function (e) { e.remove(); });
+  state.redlines.forEach(mountRedline);
+  if (state.mode === 'review') renderReviewPanel();
+}
+
+/* Signer-side: swap the Finish button for "send changes" while anything is open. */
+function updateRedlineUi() {
+  var open = openRedlines().length;
+  var cnt = document.getElementById('rlCount');
+  if (cnt) cnt.textContent = open ? open + ' proposed change' + (open === 1 ? '' : 's') : '';
+  var send = document.getElementById('btnSendChanges');
+  var fin = document.getElementById('btnFinish');
+  if (!send || !fin) return;
+  send.style.display = open ? 'inline-block' : 'none';
+  fin.style.display = open ? 'none' : 'inline-block';
+  if (open) {
+    var p = document.getElementById('signProgress');
+    if (p) p.textContent = 'You have ' + open + ' proposed change' + (open === 1 ? '' : 's') +
+      ' waiting. Send them to the sender for approval — you can sign once they respond.';
+  }
+}
+
+/* Signer-side: after a round trip, show what the sender decided. */
+function renderDecisionsNote() {
+  var box = document.getElementById('decisionsNote');
+  if (!box) return;
+  var decided = decidedRedlines();
+  if (!decided.length) { box.style.display = 'none'; return; }
+  var acc = decided.filter(function (r) { return r.status === 'accepted'; }).length;
+  var html = '<h4>The sender responded to your proposed changes</h4>' +
+    '<p style="color:#666;margin-bottom:6px">' + acc + ' of ' + decided.length +
+    ' accepted. Accepted changes are marked in green on the document and will appear in the signed PDF. ' +
+    'You can propose more changes, or sign if you are happy.</p><ul>';
+  decided.forEach(function (r) {
+    var lbl = r.status === 'accepted'
+      ? '<strong style="color:var(--rl-green)">Accepted</strong>'
+      : '<strong style="color:#777">Not accepted</strong>';
+    html += '<li>' + lbl + ' &mdash; #' + redlineNumber(r) + ' ' +
+      (r.kind === 'comment' ? esc(r.note) : (r.original ? '&ldquo;' + esc(r.original.slice(0, 70)) + '&rdquo; &rarr; ' : '') + '<em>' + esc(r.proposed) + '</em>') +
+      (r.reply ? '<br><span style="color:#666">Sender: ' + esc(r.reply) + '</span>' : '') +
+      '</li>';
+  });
+  box.innerHTML = html + '</ul>';
+  box.style.display = 'block';
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* ---------------- sender's review panel ---------------- */
+function renderReviewPanel() {
+  var list = document.getElementById('reviewList');
+  if (!list) return;
+  var open = openRedlines().length;
+  document.getElementById('reviewSub').innerHTML =
+    state.redlines.length
+      ? '<strong>' + signerLabel(state.signerIndex + 1) + '</strong> proposed ' +
+        state.redlines.length + ' change' + (state.redlines.length === 1 ? '' : 's') +
+        ' instead of signing. Accept or reject each one, then send the document back to be signed.'
+      : 'No changes were proposed.';
+  list.innerHTML = '';
+  state.redlines.forEach(function (r) {
+    var n = redlineNumber(r);
+    var card = document.createElement('div');
+    card.className = 'rl-card' + (r.kind === 'comment' ? ' comment' : '') +
+      (r.status !== 'open' ? ' ' + r.status : '');
+    card.dataset.rl = r.id;
+    var badge = r.status === 'open' ? '' :
+      '<span class="badge">' + (r.status === 'accepted' ? 'Accepted' : 'Rejected') + '</span>';
+    var body = '<div class="who">#' + n + ' &middot; ' +
+      (r.kind === 'comment' ? 'Comment' : 'Wording change') + ' &middot; page ' + (r.page + 1) +
+      ' &middot; ' + esc(r.byName) + badge + '</div>';
+    if (r.kind === 'edit') {
+      if (r.original) body += '<div class="was">' + esc(r.original) + '</div>';
+      if (r.proposed) body += '<div class="now">' + esc(r.proposed) + '</div>';
+    }
+    if (r.note) body += '<div class="note">&ldquo;' + esc(r.note) + '&rdquo;</div>';
+    if (r.reply) body += '<div class="reply"><strong>Your reply:</strong> ' + esc(r.reply) + '</div>';
+    card.innerHTML = body;
+
+    var acts = document.createElement('div');
+    acts.className = 'acts';
+    if (r.status === 'open') {
+      var rep = document.createElement('textarea');
+      rep.className = 'rl-reply';
+      rep.rows = 2;
+      rep.placeholder = 'Optional note back to ' + signerLabel(r.by + 1) + '…';
+      rep.value = r.reply || '';
+      rep.style.cssText = 'width:100%;margin-top:8px;padding:7px 9px;font-family:inherit;' +
+        'font-size:12.5px;border:1px solid var(--border);border-radius:7px;resize:vertical';
+      rep.addEventListener('click', function (e) { e.stopPropagation(); });
+      rep.addEventListener('input', function () { r.reply = rep.value.trim(); });
+      card.appendChild(rep);
+
+      var a = document.createElement('button');
+      a.className = 'rl-btn acc';
+      a.textContent = r.kind === 'comment' ? '✓ Acknowledge' : '✓ Accept';
+      a.addEventListener('click', function (e) { e.stopPropagation(); decideRedline(r, 'accepted'); });
+      var j = document.createElement('button');
+      j.className = 'rl-btn rej';
+      j.textContent = '✕ Reject';
+      j.addEventListener('click', function (e) { e.stopPropagation(); decideRedline(r, 'rejected'); });
+      acts.appendChild(a); acts.appendChild(j);
+    } else {
+      var u = document.createElement('button');
+      u.className = 'rl-btn undo';
+      u.textContent = 'Undo';
+      u.addEventListener('click', function (e) {
+        e.stopPropagation();
+        r.status = 'open'; r.reply = ''; r.decidedAt = '';
+        refreshRedlines();
+      });
+      acts.appendChild(u);
+    }
+    card.appendChild(acts);
+    card.addEventListener('click', function () { focusRedlineOnPage(r); });
+    list.appendChild(card);
+  });
+
+  var status = document.getElementById('reviewStatus');
+  var btn = document.getElementById('btnReviewSend');
+  if (open) {
+    status.textContent = open + ' change' + (open === 1 ? '' : 's') + ' still to decide.';
+    btn.disabled = true;
+  } else {
+    var acc = state.redlines.filter(function (r) { return r.status === 'accepted'; }).length;
+    status.textContent = 'All decided — ' + acc + ' accepted, ' +
+      (state.redlines.length - acc) + ' rejected.';
+    btn.disabled = false;
+  }
+}
+
+function decideRedline(r, status) {
+  // the reply box writes straight to r.reply as the sender types
+  var card = document.querySelector('#reviewList .rl-card[data-rl="' + r.id + '"] .rl-reply');
+  if (card) r.reply = card.value.trim();
+  r.status = status;
+  r.decidedAt = new Date().toISOString();
+  refreshRedlines();
+}
+
+function focusRedlineOnPage(r) {
+  document.querySelectorAll('#pages [data-rl]').forEach(function (e) { e.classList.remove('focus'); });
+  var el = document.querySelector('#pages [data-rl="' + r.id + '"]');
+  if (el) { el.classList.add('focus'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+}
+function focusRedlineCard(r) {
+  document.querySelectorAll('#reviewList .rl-card').forEach(function (e) { e.style.outline = ''; });
+  var c = document.querySelector('#reviewList .rl-card[data-rl="' + r.id + '"]');
+  if (c) { c.style.outline = '2px solid var(--rl-red)'; c.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+}
+
+/* ---------------- round trip ---------------- */
+
+/* Signer -> sender: hand the proposed changes back for a decision. */
+async function sendChangesBack() {
+  if (!openRedlines().length) { toast('No proposed changes to send.'); return; }
+  var emb = window.GOHVIO_DOC || {};
+  var html = buildSigningHtml({
+    key: emb.key, freeEmail: emb.freeEmail, logo: emb.logo,
+    signers: state.signers, signerIndex: state.signerIndex,
+    values: state.values,
+    redlines: state.redlines,
+    allowRedline: state.allowRedline,
+    round: (state.round || 0) + 1,
+    senderEmail: state.senderEmail,
+    stage: 'review',
+    signerEmail: state.senderEmail || emb.signerEmail || ''
+  });
+  if (!html) { toast('Internal error: embed slot not found.'); return; }
+  var fname = 'CHANGES-' + state.docName.replace(/\s+/g, '-') + '.html';
+  var n = openRedlines().length;
+
+  if ((emb.key || emb.freeEmail) && state.senderEmail) {
+    busy(true);
+    try {
+      await callEsign({
+        action: 'send_request',
+        key: emb.key || '', freeEmail: emb.freeEmail || '',
+        signerEmail: state.senderEmail, signerName: '',
+        message: signerLabel(state.signerIndex + 1) + ' proposed ' + n + ' change' +
+          (n === 1 ? '' : 's') + ' to "' + state.docName +
+          '" before signing. Open the attached file to accept or reject each one.',
+        docName: state.docName + ' (proposed changes)',
+        fileHtmlB64: bytesToB64(new TextEncoder().encode(html)),
+        prevPath: window.GOHVIO_PATH || ''
+      });
+      toast('Your ' + n + ' proposed change' + (n === 1 ? '' : 's') + ' went back to ' +
+        state.senderEmail + '. They will accept or reject each one and return the document to you to sign.');
+      return;
+    } catch (err) {
+      console.error(err);
+      downloadBlob(new Blob([html], { type: 'text/html' }), fname);
+      toast('Sending failed (' + err.message + '). A file was downloaded instead — email it to the sender.');
+      return;
+    } finally { busy(false); }
+  }
+  downloadBlob(new Blob([html], { type: 'text/html' }), fname);
+  toast('Your proposed changes were saved to a file. Email it back to the sender — they open it to accept or reject each one.');
+}
+
+/* Sender -> signer: decisions made, send the document back to be signed. */
+async function sendBackForSignature() {
+  if (openRedlines().length) { toast('Decide on every proposed change first.'); return; }
+  var emb = window.GOHVIO_DOC || {};
+  var target = state.signers[state.signerIndex];
+  var html = buildSigningHtml({
+    key: emb.key, freeEmail: emb.freeEmail, logo: emb.logo,
+    signers: state.signers, signerIndex: state.signerIndex,
+    values: state.values,
+    redlines: state.redlines,
+    allowRedline: state.allowRedline,
+    round: (state.round || 0) + 1,
+    senderEmail: state.senderEmail,
+    stage: 'sign',
+    signerEmail: target ? target.email : ''
+  });
+  if (!html) { toast('Internal error: embed slot not found.'); return; }
+  var acc = state.redlines.filter(function (r) { return r.status === 'accepted'; }).length;
+  var fname = 'SIGN-' + state.docName.replace(/\s+/g, '-') + '-revised.html';
+
+  if ((emb.key || emb.freeEmail) && target && target.email) {
+    busy(true);
+    try {
+      await callEsign({
+        action: 'send_request',
+        key: emb.key || '', freeEmail: emb.freeEmail || '',
+        signerEmail: target.email, signerName: target.name || '',
+        message: 'Your proposed changes to "' + state.docName + '" have been reviewed: ' +
+          acc + ' of ' + state.redlines.length + ' accepted. The document is ready for your signature.',
+        docName: state.docName + ' (revised)',
+        fileHtmlB64: bytesToB64(new TextEncoder().encode(html)),
+        prevPath: window.GOHVIO_PATH || ''
+      });
+      toast('Sent back to ' + target.email + ' to sign. Accepted changes are marked on the document.');
+      document.getElementById('btnReviewSend').disabled = true;
+      return;
+    } catch (err) {
+      console.error(err);
+      downloadBlob(new Blob([html], { type: 'text/html' }), fname);
+      toast('Sending failed (' + err.message + '). A file was downloaded instead — email it back to the signer.');
+      return;
+    } finally { busy(false); }
+  }
+  downloadBlob(new Blob([html], { type: 'text/html' }), fname);
+  toast('Revised document downloaded. Email it back to the signer — accepted changes are marked on it.');
+}
+
 // ---------- certificate of completion ----------
 async function sha256Hex(bytes) {
   var digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest))
     .map(function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+}
+
+/* Appends a "Schedule of Negotiated Changes": every change that was proposed
+   during negotiation, who proposed it, and whether the sender accepted it.
+   Rejected changes are kept on the record deliberately — the schedule is the
+   audit trail of what the parties agreed and what they didn't. */
+function addChangeSchedulePages(doc, helv, bold) {
+  var red = PDFLib.rgb(0.776, 0.157, 0.157);
+  var green = PDFLib.rgb(0.106, 0.478, 0.243);
+  var dark = PDFLib.rgb(0.06, 0.07, 0.09);
+  var grey = PDFLib.rgb(0.4, 0.4, 0.4);
+  var teal = PDFLib.rgb(0.05, 0.45, 0.47);
+  var page = doc.addPage([612, 792]);
+  var y = 712;
+
+  // Wrap text to the page width, drawing one line at a time and paging as needed.
+  function wrap(txt, font, size, color, indent, gap) {
+    var maxW = 492 - (indent || 0);
+    var words = String(txt).split(/\s+/);
+    var line = '';
+    var out = [];
+    words.forEach(function (w) {
+      var test = line ? line + ' ' + w : w;
+      if (font.widthOfTextAtSize(test, size) > maxW && line) { out.push(line); line = w; }
+      else line = test;
+    });
+    if (line) out.push(line);
+    out.forEach(function (L) {
+      if (y < 70) { page = doc.addPage([612, 792]); y = 730; }
+      page.drawText(L, { x: 60 + (indent || 0), y: y, size: size, font: font, color: color });
+      y -= size + (gap == null ? 4 : gap);
+    });
+  }
+
+  wrap('Schedule of Negotiated Changes', bold, 20, teal, 0, 10);
+  wrap('Document: ' + state.docName, helv, 11, dark, 0, 12);
+
+  // Part A — tracked changes that arrived in the uploaded Word file and were
+  // resolved before the document was ever sent out.
+  if (state.trackedLog && state.trackedLog.length) {
+    var tAcc = state.trackedLog.filter(function (c) { return c.decision === 'accept'; }).length;
+    wrap('A.  Tracked changes received in the Word document', bold, 12.5, dark, 0, 6);
+    wrap(state.trackedLog.length + ' tracked change(s) were present in the uploaded file; ' + tAcc +
+         ' accepted and written into the text above, ' + (state.trackedLog.length - tAcc) +
+         ' rejected and discarded. The document was rebuilt from these decisions before signing.',
+         helv, 10, grey, 0, 10);
+    state.trackedLog.forEach(function (c) {
+      if (y < 120) { page = doc.addPage([612, 792]); y = 730; }
+      var kind = c.type === 'replace' ? 'Wording replaced' : c.type === 'insert' ? 'Wording added' :
+                 c.type === 'delete' ? 'Wording removed' : c.type === 'split' ? 'Paragraph split' :
+                 'Paragraphs joined';
+      wrap('(' + c.n + ')  ' + kind + (c.author ? '  ·  by ' + c.author : '') +
+           (c.date ? '  ·  ' + c.date.replace('T', ' ').replace('Z', ' UTC') : ''), bold, 10.5, dark, 0, 4);
+      var ok = c.decision === 'accept';
+      wrap(ok ? 'ACCEPTED — now part of the document' : 'REJECTED — original wording kept',
+           bold, 9.5, ok ? green : grey, 0, 5);
+      if (c.deleted) wrap('Struck out: “' + c.deleted + '”', helv, 9.5, grey, 12, 3);
+      if (c.inserted) wrap('Inserted: “' + c.inserted + '”', helv, 9.5, ok ? green : grey, 12, 3);
+      y -= 9;
+    });
+    y -= 8;
+    if (y < 130) { page = doc.addPage([612, 792]); y = 730; }
+    wrap('B.  Changes proposed by signers during negotiation', bold, 12.5, dark, 0, 6);
+    if (!state.redlines.length) wrap('None — no signer proposed a change to the document.', helv, 10, grey, 0, 10);
+  }
+
+  if (state.redlines.length) {
+    var accCount = state.redlines.filter(function (r) { return r.status === 'accepted'; }).length;
+    wrap(state.redlines.length + ' change(s) proposed during negotiation; ' + accCount +
+         ' accepted and incorporated into the signed document above. ' +
+         'Accepted changes are marked in the pages of this document with the numbers below.',
+         helv, 10, grey, 0, 12);
+    y -= 6;
+  }
+
+  state.redlines.forEach(function (r, i) {
+    if (y < 130) { page = doc.addPage([612, 792]); y = 730; }
+    var head = '[' + (i + 1) + ']  ' + (r.kind === 'comment' ? 'Comment' : 'Wording change') +
+      '  ·  page ' + (r.page + 1) + '  ·  proposed by ' + r.byName;
+    wrap(head, bold, 10.5, dark, 0, 4);
+    var verdict = r.status === 'accepted' ? 'ACCEPTED by sender' :
+                  r.status === 'rejected' ? 'REJECTED by sender' : 'NOT DECIDED';
+    wrap(verdict + (r.decidedAt ? '  (' + new Date(r.decidedAt).toUTCString() + ')' : ''),
+         bold, 9.5, r.status === 'accepted' ? green : r.status === 'rejected' ? grey : red, 0, 5);
+    if (r.kind === 'edit') {
+      if (r.original) wrap('Original: “' + r.original + '”', helv, 9.5, grey, 12, 3);
+      if (r.proposed) wrap('Replaced with: “' + r.proposed + '”', helv, 9.5,
+                           r.status === 'accepted' ? green : grey, 12, 3);
+    }
+    if (r.note) wrap('Reason given: ' + r.note, helv, 9.5, dark, 12, 3);
+    if (r.reply) wrap('Sender’s response: ' + r.reply, helv, 9.5, dark, 12, 3);
+    y -= 10;
+  });
+
+  if (y < 90) { page = doc.addPage([612, 792]); y = 730; }
+  y -= 4;
+  wrap('Rejected proposals are listed for completeness. They were not incorporated and form no ' +
+       'part of the agreement. The signatures on this document were applied after this schedule ' +
+       'was settled.', helv, 8.5, grey, 0, 3);
 }
 
 /* Appends a certificate page: who signed, when, and the SHA-256 fingerprint
@@ -1581,6 +3043,9 @@ async function addCertificatePage(bytes, fingerprint) {
   var helv = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
   var bold = await doc.embedFont(PDFLib.StandardFonts.HelveticaBold);
   var courier = await doc.embedFont(PDFLib.StandardFonts.Courier);
+  if (state.redlines.length || (state.trackedLog && state.trackedLog.length)) {
+    addChangeSchedulePages(doc, helv, bold);
+  }
   var page = doc.addPage([612, 792]);
   var teal = PDFLib.rgb(0.05, 0.45, 0.47);
   var dark = PDFLib.rgb(0.06, 0.07, 0.09);
@@ -1602,6 +3067,20 @@ async function addCertificatePage(bytes, fingerprint) {
     line((i + 1) + '. ' + (s.name ? s.name + ' <' + s.email + '>' : s.email) + ' on ' + when, helv, 11, dark, 12);
   });
   y -= 10;
+  if (state.trackedLog && state.trackedLog.length) {
+    var ta = state.trackedLog.filter(function (c) { return c.decision === 'accept'; }).length;
+    y -= 4;
+    line('Incoming redlines: ' + state.trackedLog.length + ' tracked change(s) in the uploaded Word file, ' +
+         ta + ' accepted — see the Schedule of Negotiated Changes.', helv, 11, dark);
+    y -= 6;
+  }
+  if (state.redlines.length) {
+    var na = state.redlines.filter(function (r) { return r.status === 'accepted'; }).length;
+    y -= 4;
+    line('Negotiation: ' + state.redlines.length + ' change(s) proposed, ' + na +
+         ' accepted — see the Schedule of Negotiated Changes.', helv, 11, dark);
+    y -= 6;
+  }
   line('Document fingerprint (SHA-256):', bold, 12, dark);
   line(fingerprint.slice(0, 32), courier, 11, dark, 12);
   line(fingerprint.slice(32), courier, 11, dark, 12);
@@ -1616,6 +3095,12 @@ async function addCertificatePage(bytes, fingerprint) {
 
 // ---------- finish: forward to next signer, or flatten to signed PDF ----------
 async function finishAndDownload() {
+  // Nothing gets signed while a proposed change is still waiting on the sender.
+  if (openRedlines().length) {
+    toast('You have ' + openRedlines().length + ' proposed change(s) awaiting approval. ' +
+          'Send them to the sender first — you can sign once they respond.');
+    return;
+  }
   var multi = state.mode === 'sign' && state.signers.length > 1;
   var isLast = !multi || state.signerIndex >= state.signers.length - 1;
 
@@ -1646,6 +3131,11 @@ async function finishAndDownload() {
       signers: state.signers,
       signerIndex: state.signerIndex + 1,
       values: state.values,
+      stage: 'sign',
+      allowRedline: state.allowRedline,
+      redlines: state.redlines,          // later signers see and can add to the record
+      round: state.round || 0,
+      senderEmail: state.senderEmail,
       signerEmail: next.email
     });
     if ((embF.key || embF.freeEmail) && fwdHtml) {
@@ -1708,6 +3198,40 @@ async function finishAndDownload() {
         p1.drawImage(logoPng, { x: 24 * k, y: p1.getHeight() - 18 * k - lh, width: lw, height: lh });
       } catch (logoErr) { console.error('logo stamp failed', logoErr); }
     }
+    // Accepted changes: strike the original wording and print the agreed
+    // replacement underneath, numbered to match the schedule page.
+    var accepted = state.redlines.filter(function (r) { return r.status === 'accepted'; });
+    for (var a = 0; a < accepted.length; a++) {
+      var rl = accepted[a];
+      var rpage = pages[rl.page];
+      if (!rpage) continue;
+      var rw = rpage.getWidth(), rh = rpage.getHeight();
+      var red = PDFLib.rgb(0.776, 0.157, 0.157);
+      var num = String(redlineNumber(rl));
+      if (rl.kind === 'edit') {
+        var bx = rl.x * rw, bw = rl.w * rw, bh = rl.h * rh;
+        var by = rh - (rl.y * rh) - bh;
+        rpage.drawLine({                                    // strike through
+          start: { x: bx, y: by + bh / 2 }, end: { x: bx + bw, y: by + bh / 2 },
+          thickness: 1.2, color: red
+        });
+        rpage.drawRectangle({
+          x: bx, y: by, width: bw, height: bh,
+          borderColor: red, borderWidth: 0.6, opacity: 0
+        });
+        if (rl.proposed) {
+          var ps = Math.max(7, Math.min(bh * 0.72, 10));
+          rpage.drawText('[' + num + '] ' + rl.proposed, {
+            x: bx, y: Math.max(4, by - ps - 1.5), size: ps, font: helv, color: red
+          });
+        }
+      } else {
+        rpage.drawText('[' + num + ']', {
+          x: rl.x * rw, y: rh - (rl.y * rh), size: 9, font: helv, color: red
+        });
+      }
+    }
+
     for (var j = 0; j < state.fields.length; j++) {
       var fld = state.fields[j];
       var val = state.values[fld.id];
