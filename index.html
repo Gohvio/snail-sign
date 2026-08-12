@@ -161,7 +161,7 @@
   }
   .page-wrap canvas { display: block; }
 
-  /* Fields — color-coded by signer: 1 teal, 2 indigo, 3 amber, 4 coral */
+  /* Fields, color-coded by signer: 1 teal, 2 indigo, 3 amber, 4 coral */
   .field {
     position: absolute; border: 1.5px dashed var(--teal); border-radius: 4px;
     background: rgba(13,115,119,.08); display: flex; align-items: center;
@@ -607,7 +607,7 @@
 </header>
 
 <div id="pricingBanner">
-  <span>&#127881; <strong>Your first document is free</strong>, no payment needed. After that it's <strong>$1/month for unlimited documents</strong>, plus your business logo as a letterhead. Secure payment by Stripe, cancel anytime.</span>
+  <span>&#127881; <strong>Your first document is free</strong>, no payment needed. After that it's <strong>$1/month, or $10/year and save 17%</strong>, for unlimited documents, plus your business logo as a letterhead. Secure payment by Stripe, cancel anytime.</span>
   <button aria-label="Dismiss" onclick="localStorage.setItem('ssBannerHidden','1');this.parentElement.style.display='none'">&times;</button>
 </div>
 <script>if (localStorage.getItem('ssBannerHidden')) document.getElementById('pricingBanner').style.display = 'none';</script>
@@ -685,10 +685,10 @@
       <option value="4">Signer 4</option>
     </select>
     <button class="btn btn-ghost tip" id="btnLogo" style="margin-left:14px"
-            data-tip="Add your business logo as a letterhead at the top of the document. It appears on every page and on the final signed PDF. Available with the $1/month subscription.">&#127912; Add my logo</button>
+            data-tip="Add your business logo as a letterhead at the top of the document. It appears on every page and on the final signed PDF. Available with the subscription ($1/month, or $10/year and save 17%).">&#127912; Add my logo</button>
     <input type="file" id="logoInput" accept="image/png,image/jpeg,image/webp" style="display:none">
     <label class="tip" id="allowRedlineWrap" style="margin-left:14px;font-size:13px;display:inline-flex;align-items:center;gap:6px;cursor:pointer"
-           data-tip="Lets any signer strike out wording and propose a replacement, or leave a comment, before they sign. Their proposed changes come back to you to accept or reject — nothing is signed until you approve.">
+           data-tip="Lets any signer strike out wording and propose a replacement, or leave a comment, before they sign. Their proposed changes come back to you to accept or reject. Nothing is signed until you approve.">
       <input type="checkbox" id="allowRedline" checked style="cursor:pointer"> Allow signers to propose changes
     </label>
   </div>
@@ -734,7 +734,7 @@
       <label for="rlProposed">Replace it with</label>
       <input type="text" id="rlProposed" placeholder="e.g. sixty (60) days">
     </div>
-    <label for="rlNote" id="rlNoteLabel">Reason (optional — the sender sees this)</label>
+    <label for="rlNote" id="rlNoteLabel">Reason (optional; the sender sees this)</label>
     <textarea id="rlNote" placeholder="e.g. Our standard payment terms are 60 days."></textarea>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="btnRlCancel">Cancel</button>
@@ -794,20 +794,22 @@
 
 <div id="keyOverlay" style="position:fixed;inset:0;background:rgba(15,17,23,.6);z-index:110;display:none;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:16px;padding:24px;width:440px;max-width:94vw">
-    <h3 style="font-family:'Poppins',sans-serif;margin-bottom:10px">Almost there &mdash; how would you like to send?</h3>
+    <h3 style="font-family:'Poppins',sans-serif;margin-bottom:10px">Almost there: how would you like to send?</h3>
     <p style="font-size:14px;color:#444;margin-bottom:14px">Snail Sign emails your documents for you:
       signature requests, automatic forwarding between signers, and the final signed PDF delivered to everyone.</p>
     <div id="freeTrialBox" style="background:#e6f2f2;border-radius:10px;padding:14px 16px;margin-bottom:14px">
       <strong style="font-size:14px">&#127881; New here? Your first document is free.</strong>
-      <p style="font-size:12px;color:#666;margin:4px 0 8px">Enter your email and send your 1 free document — no payment needed.</p>
+      <p style="font-size:12px;color:#666;margin:4px 0 8px">Enter your email and send your 1 free document, no payment needed.</p>
       <input type="email" id="freeEmailInput" placeholder="you@company.com" autocomplete="email"
              style="width:100%;padding:11px;font-size:15px;border:1px solid var(--border);border-radius:8px;margin:0 0 8px">
       <button class="btn btn-primary" id="btnFreeSend" style="display:block;width:100%">Send my free document</button>
     </div>
     <a href="https://buy.stripe.com/bJe8wP2rD12GdkY0CY38405" target="_blank" rel="noopener"
-       class="btn btn-primary" style="display:block;text-align:center;text-decoration:none;margin-bottom:8px">Get a key for $1/month &mdash; unlimited documents</a>
+       class="btn btn-primary" style="display:block;text-align:center;text-decoration:none;margin-bottom:8px">Get a key for $1/month, unlimited documents</a>
+    <a href="https://buy.stripe.com/7sY5kD2rDh1EbcQ1H238409" target="_blank" rel="noopener"
+       class="btn btn-ghost" style="display:block;text-align:center;text-decoration:none;margin-bottom:8px">Or pay $10 for the year and save 17%</a>
     <p style="font-size:12px;color:#888;margin:0 0 16px">Subscribe and your key arrives by email within a minute.
-      Includes your business logo as a letterhead on every document. $1 is charged automatically each month. Cancel anytime.</p>
+      Includes your business logo as a letterhead on every document. Your plan renews automatically. Cancel anytime.</p>
     <label style="font-size:13px;color:#666">Already have a key? Paste it here (one-time setup):</label>
     <input type="text" id="keyInput" placeholder="gsk_&hellip;" autocomplete="off"
            style="width:100%;padding:11px;font-size:15px;border:1px solid var(--border);border-radius:8px;margin:4px 0 0;font-family:monospace">
@@ -826,7 +828,7 @@
     <p style="font-size:14px;color:#555;line-height:1.8;margin-bottom:14px">Then I realized the real problem wasn't the price. It was how we think about signatures. A signature isn't just a click. It's the beginning of a relationship. A customer placing their trust in you. A new teammate joining your mission. An investor believing in your vision. A partnership built on a promise.</p>
     <p style="font-size:14px;color:#555;line-height:1.8;margin-bottom:14px">Signing a contract was never meant to be about speed. It's about trust. Yet most platforms treat the signature as the finish line. I believe it's where the story begins. Because every important relationship deserves a trusted trail.</p>
     <p style="font-size:14px;color:#555;line-height:1.8;margin-bottom:14px">Every version. Every redline. Every approval. Every signer. Every decision. Every audit. Captured. Preserved. Never lost. Just like a snail leaves a trail wherever it goes, every agreement should leave a trail you can trust.</p>
-    <p style="font-size:14px;color:#555;line-height:1.8;margin-bottom:14px">That's why I built Snail Sign—to give founders and growing businesses enterprise-grade electronic signatures, without enterprise complexity or enterprise pricing.</p>
+    <p style="font-size:14px;color:#555;line-height:1.8;margin-bottom:14px">That's why I built Snail Sign: to give founders and growing businesses enterprise-grade electronic signatures, without enterprise complexity or enterprise pricing.</p>
     <p style="font-size:14px;color:#555;line-height:1.8;margin-bottom:16px"><strong>Built for founders. Built for growing businesses. Built on trust.</strong></p>
     <svg viewBox="0 0 260 70" width="200" height="54" aria-hidden="true" style="display:block;margin:2px 0 2px -6px">
       <path d="M14 48 C 26 14, 44 10, 46 26 C 48 40, 34 54, 24 50 C 40 46, 58 24, 72 22 C 84 20, 78 40, 90 38 C 100 36, 104 22, 116 24 C 126 26, 122 42, 136 36 C 150 30, 158 16, 172 20 C 184 24, 176 44, 194 36 C 206 30, 218 26, 234 30"
@@ -834,7 +836,7 @@
       <path d="M40 58 C 90 52, 160 52, 226 55" fill="none" stroke="var(--teal)" stroke-width="1.4" stroke-linecap="round" opacity="0.45"/>
       <circle cx="238" cy="30" r="2" fill="var(--coral)"/>
     </svg>
-    <p style="font-size:14px;color:#888;font-style:italic">— Emily, founder</p>
+    <p style="font-size:14px;color:#888;font-style:italic">Emily, founder</p>
     <div class="modal-actions">
       <button class="btn btn-primary" id="btnStoryClose">Got it</button>
     </div>
@@ -856,7 +858,7 @@
       <table style="width:100%;font-size:13px;border-collapse:collapse">
         <tr style="border-bottom:1px solid #ddd">
           <td style="padding:10px;font-weight:600">Snail Sign</td>
-          <td style="padding:10px">$1/mo</td>
+          <td style="padding:10px">$1/mo or $10/yr</td>
         </tr>
         <tr style="border-bottom:1px solid #ddd;background:#f9f8f6">
           <td style="padding:10px;font-weight:600">eSign Tool 1</td>
@@ -912,8 +914,8 @@
   <div style="font-family:'Poppins',sans-serif;font-weight:600;font-size:17px;margin-bottom:6px">
     Want to send out your own document for signatures?</div>
   <div style="font-size:14px;opacity:.95;margin-bottom:14px">
-    Try Snail Sign: <strong>1 free document</strong> and only <strong>$1/month</strong> for unlimited docs.</div>
-  <a href="https://gohvio.github.io/snail-sign/" target="_blank" rel="noopener"
+    Try Snail Sign: <strong>1 free document</strong>, then <strong>$1/month or $10/year</strong> for unlimited docs.</div>
+  <a href="https://snailsign.com/" target="_blank" rel="noopener"
      style="display:inline-block;background:#fff;color:#FF6B6B;font-weight:700;font-family:'Poppins',sans-serif;
             padding:12px 26px;border-radius:10px;text-decoration:none;font-size:15px">Send my free document &rarr;</a>
 </div>
@@ -921,9 +923,82 @@
 <div id="toast"></div>
 <div id="busy">Working&hellip;</div>
 
+<!-- ============================================================
+     Site footer. Sits before the main <script> on purpose so that it is
+     captured in PRISTINE_HTML and therefore travels with the signing file
+     your signers open. They get the same Trust & Security and legal links
+     the sender saw. All URLs are absolute for that reason: a signing file
+     opened from an email attachment has no server to resolve paths against.
+     ============================================================ -->
+<style>
+  .ss-footer {
+    background: var(--dark); color: #cfcdc9; margin-top: 48px;
+    padding: 32px 24px 20px; font-size: 14px; line-height: 1.6;
+  }
+  .ss-footer a { color: #cfcdc9; text-decoration: none; }
+  .ss-footer a:hover { color: #fff; text-decoration: underline; }
+  .ss-footer-top {
+    max-width: 1100px; margin: 0 auto; display: flex; flex-wrap: wrap;
+    align-items: center; gap: 12px 28px;
+  }
+  .ss-footer-brand { display: flex; align-items: center; gap: 10px; }
+  .ss-footer-brand img { width: 36px; height: 36px; border-radius: 8px; }
+  .ss-footer-brand strong {
+    font-family: 'Poppins', sans-serif; font-size: 16px; color: #fff; font-weight: 700;
+  }
+  .ss-footer-links { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; }
+  .ss-footer-links button {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    font-family: 'DM Sans', sans-serif; font-size: 14px; color: #cfcdc9;
+  }
+  .ss-footer-links button:hover { color: #fff; text-decoration: underline; }
+  .ss-footer-spacer { flex: 1 1 auto; }
+  .ss-footer-key {
+    color: var(--coral); font-weight: 500; white-space: nowrap;
+  }
+  .ss-footer-bottom {
+    max-width: 1100px; margin: 20px auto 0; padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,.12);
+    display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center;
+    font-size: 13px; color: #8f8d89;
+  }
+  .ss-footer-bottom a { color: #8f8d89; }
+  @media (max-width: 680px) {
+    .ss-footer-top, .ss-footer-bottom { flex-direction: column; align-items: flex-start; }
+  }
+</style>
+
+<footer class="ss-footer">
+  <div class="ss-footer-top">
+    <div class="ss-footer-brand">
+      <img src="https://snailsign.com/snail-logo.png" alt="">
+      <strong>Snail Sign</strong>
+    </div>
+    <nav class="ss-footer-links" aria-label="Footer">
+      <button type="button" onclick="document.getElementById('btnStory').click()">Story</button>
+      <button type="button" onclick="document.getElementById('btnWhySnail').click()">Why Snail Sign</button>
+      <button type="button" onclick="document.getElementById('btnTrustSecurity').click()">Trust &amp; Security</button>
+      <a href="https://github.com/Gohvio/snail-sign" target="_blank" rel="noopener noreferrer">Source code</a>
+      <a href="mailto:emilygoh@gohvio.io">Contact</a>
+    </nav>
+    <div class="ss-footer-spacer"></div>
+    <a class="ss-footer-key" href="https://buy.stripe.com/bJe8wP2rD12GdkY0CY38405"
+       target="_blank" rel="noopener noreferrer">Get a key, $1/month &rarr;</a>
+    <a class="ss-footer-key" href="https://buy.stripe.com/7sY5kD2rDh1EbcQ1H238409"
+       target="_blank" rel="noopener noreferrer">or $10/year &rarr;</a>
+  </div>
+  <div class="ss-footer-bottom">
+    <span>&copy; 2026 Gohvio, Inc. Snail Sign is a Gohvio product.</span>
+    <a href="https://snailsign.com/privacy.html">Privacy Notice</a>
+    <a href="https://snailsign.com/terms.html">Terms of Use</a>
+    <a href="https://github.com/Gohvio/snail-sign/blob/main/LICENSE"
+       target="_blank" rel="noopener noreferrer">Licence</a>
+  </div>
+</footer>
+
 <script>
 /* ============================================================
-   Snail Sign — single-file e-signature tool
+   Snail Sign: single-file e-signature tool
    Prep mode  : Emily uploads a doc, places fields, downloads a
                 self-contained signing HTML file.
    Sign mode  : the signing file (this same app + embedded data)
@@ -931,7 +1006,7 @@
                 flattened, signed PDF.
    ============================================================ */
 
-// NOTE: this one file cannot be protected by Subresource Integrity — SRI only
+// NOTE: this one file cannot be protected by Subresource Integrity. SRI only
 // works on <script> tags, and pdf.js loads its worker by URL. The CSP
 // worker-src directive restricts WHERE it can come from, but not WHAT it
 // contains. To close this gap properly, download the file once and commit it
@@ -951,8 +1026,8 @@ function getFreeEmail() {
   return (localStorage.getItem('gohvioEsignFree') || '').trim().toLowerCase();
 }
 
-/* No key saved yet: show the credentials dialog — send the 1 free document
-   (email only), buy ($1/mo Stripe subscription, opens in a new tab), or paste
+/* No key saved yet: show the credentials dialog, send the 1 free document
+   (email only), buy ($1/mo or $10/yr Stripe subscription, opens in a new tab), or paste
    an existing key. Resolves with {key, freeEmail} or null if cancelled.
    freeUsed=true hides the free option (their free document is spent). */
 function requestEsignCred(freeUsed) {
@@ -978,7 +1053,7 @@ function requestEsignCred(freeUsed) {
     };
     document.getElementById('btnKeySave').onclick = function () {
       var k = input.value.trim();
-      if (!k) { toast('Paste your key first — or click "Get a key" to subscribe.'); return; }
+      if (!k) { toast('Paste your key first, or click "Get a key" to subscribe.'); return; }
       localStorage.setItem('gohvioEsignKey', k);
       ov.style.display = 'none';
       resolve({ key: k, freeEmail: '' });
@@ -996,7 +1071,7 @@ async function callEsign(payload) {
   if (!res.ok) {
     var msg = data.error || ('HTTP ' + res.status);
     var detail = data.detail || data.signer || data.emily;
-    if (detail) msg += ' — ' + JSON.stringify(detail).slice(0, 300);
+    if (detail) msg += ': ' + JSON.stringify(detail).slice(0, 300);
     throw new Error(msg);
   }
   return data;
@@ -1041,9 +1116,9 @@ var state = {
 };
 
 /* A proposed change.
-   kind 'edit'    — strike out the wording inside {x,y,w,h} and put `proposed` in its place
-   kind 'comment' — a numbered pin at {x,y} carrying `note`, no wording change
-   status         — 'open' until the sender accepts or rejects it                     */
+   kind 'edit'    : strike out the wording inside {x,y,w,h} and put `proposed` in its place
+   kind 'comment' : a numbered pin at {x,y} carrying `note`, no wording change
+   status         : 'open' until the sender accepts or rejects it                     */
 function makeRedline(kind, page, rect) {
   return {
     id: 'r' + (state.redlineSeq++) + '_' + Date.now().toString(36),
@@ -1115,7 +1190,7 @@ window.addEventListener('DOMContentLoaded', function () {
       document.body.classList.add('sign');
       if (state.allowRedline) document.body.classList.add('negotiate');
       badge.textContent = multi
-        ? 'Sign — you are signer ' + (state.signerIndex + 1) + ' of ' + state.signers.length
+        ? 'Sign: you are signer ' + (state.signerIndex + 1) + ' of ' + state.signers.length
         : 'Sign';
       if (multi && state.signerIndex < state.signers.length - 1) {
         document.getElementById('btnFinish').innerHTML = 'Finish &amp; send to next signer';
@@ -1199,7 +1274,7 @@ function toast(msg) {
 }
 function busy(on) { document.getElementById('busy').style.display = on ? 'flex' : 'none'; }
 
-/* Bright CTA shown to signers after they finish their part — waits a moment
+/* Bright CTA shown to signers after they finish their part. Waits a moment
    so the confirmation toast lands first. */
 function showPromoCta() {
   setTimeout(function () {
@@ -1276,7 +1351,7 @@ async function enterPrep() {
    someone added) and <w:del> (text someone removed), plus <w:moveTo>/<w:moveFrom>
    for moved text and an ins/del on the paragraph mark when a paragraph was split or
    joined. We read those, show them as a Word-style redline the user can accept or
-   reject one by one, then rewrite the XML so the result is genuinely clean — accepted
+   reject one by one, then rewrite the XML so the result is genuinely clean; accepted
    edits become ordinary text and every trace of markup is gone. */
 
 var W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -1490,7 +1565,7 @@ async function tcLoadComments(zip) {
         text: String(list[i].textContent || '').replace(/\s+/g, ' ').trim()
       };
     }
-  } catch (e) { /* comments are a nicety — never fail the upload over them */ }
+  } catch (e) { /* comments are a nicety, never fail the upload over them */ }
   return map;
 }
 
@@ -1529,7 +1604,7 @@ async function tcMarkupAuthor(zip) {
     var who = pick('cp:lastModifiedBy') || pick('dc:creator');
     if (who && !TC_NOT_PEOPLE.test(who)) out.author = who;
     out.date = pick('dcterms:modified') || pick('dcterms:created') || '';
-  } catch (e) { /* attribution is a nicety — never fail the upload over it */ }
+  } catch (e) { /* attribution is a nicety, never fail the upload over it */ }
   return out;
 }
 
@@ -1636,8 +1711,8 @@ function tcShow() {
   document.getElementById('tcSub').textContent = bits.join(' · ');
   document.getElementById('tcTitle').textContent = 'Review the changes to ' + state.docName;
   document.getElementById('tcIntroHow').textContent = tc.marked
-    ? 'This file was marked up by hand rather than with Word’s Track Changes — struck-out wording is a proposed deletion and underlined wording a proposed addition. We read it the same way:'
-    : 'Every change they made is marked below —';
+    ? 'This file was marked up by hand rather than with Word’s Track Changes. Struck-out wording is a proposed deletion and underlined wording a proposed addition. We read it the same way:'
+    : 'Every change they made is marked below:';
   document.body.classList.add('tc');
   window.scrollTo(0, 0);
   tcSync();
@@ -1673,7 +1748,7 @@ function tcSync() {
   btn.style.cursor = left > 0 ? 'not-allowed' : 'pointer';
   document.getElementById('tcFooterHint').textContent = left
     ? 'Decide the remaining ' + left + ' change' + (left === 1 ? '' : 's') +
-      ' to continue — or use Accept all / Reject all at the top.'
+      ' to continue, or use Accept all / Reject all at the top.'
     : 'All ' + tc.changes.length + ' changes decided. The document will be rebuilt clean, with your decisions recorded on the signed PDF.';
 }
 
@@ -1711,7 +1786,7 @@ function tcDelTextToT(root) {
 function tcMergePara(p) {
   var next = p.nextSibling;
   while (next && !(next.nodeType === 1 && tcName(next) === 'p')) next = next.nextSibling;
-  if (!next) return;                       // nothing after it — leave the break alone
+  if (!next) return;                       // nothing after it, leave the break alone
   var pPrNext = tcFirst(next, 'pPr');
   var anchor = pPrNext ? pPrNext.nextSibling : next.firstChild;
   tcKids(p).forEach(function (c) {
@@ -1801,7 +1876,7 @@ async function tcApply() {
     tc = null;
     await enterPrep();
     var a = state.trackedLog.filter(function (c) { return c.decision === 'accept'; }).length;
-    toast('Rebuilt clean — ' + a + ' change(s) accepted, ' + (state.trackedLog.length - a) +
+    toast('Rebuilt clean: ' + a + ' change(s) accepted, ' + (state.trackedLog.length - a) +
           ' rejected. Now place the blocks your signer needs to fill.');
   } catch (err) {
     console.error(err);
@@ -1880,7 +1955,7 @@ function setupLogo() {
   updateLogoButton();
   btn.addEventListener('click', function () {
     if (!getEsignKey()) {
-      toast('The logo letterhead is a subscriber feature — get a key ($1/month) and your logo appears at the top of every document you send.');
+      toast('The logo letterhead is a subscriber feature; get a key ($1/month or $10/year) and your logo appears at the top of every document you send.');
       return;
     }
     if (state.logo) {
@@ -1906,7 +1981,7 @@ function updateLogoButton() {
 }
 
 /* Downscale the chosen image to letterhead size and keep it as a PNG data URL
-   (stored in the browser only — it travels inside the signing file). */
+   (stored in the browser only, it travels inside the signing file). */
 function handleLogoFile(file) {
   var reader = new FileReader();
   reader.onload = function () {
@@ -1919,9 +1994,9 @@ function handleLogoFile(file) {
       c.height = Math.max(1, Math.round(img.height * s));
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
       var dataUrl = c.toDataURL('image/png');
-      if (dataUrl.length > 400000) { toast('That logo is too complex — please use a smaller or simpler image.'); return; }
+      if (dataUrl.length > 400000) { toast('That logo is too complex. Please use a smaller or simpler image.'); return; }
       state.logo = dataUrl;
-      try { localStorage.setItem('gohvioEsignLogo', dataUrl); } catch (e) { /* storage full — session only */ }
+      try { localStorage.setItem('gohvioEsignLogo', dataUrl); } catch (e) { /* storage full, session only */ }
       renderLogoOverlay();
       updateLogoButton();
       toast('Logo added! It shows as a letterhead at the top of page 1 and carries into the final signed PDF.');
@@ -1959,7 +2034,7 @@ async function renderPdf() {
     var scale = displayW / vp1.width;
     // Text-line map. Prep mode uses it to snap dropped blocks to lines; sign and
     // review modes use it to read back the original wording under a redline.
-    // Best-effort — scanned or docx-converted pages have no text layer, and that's fine.
+    // Best-effort: scanned or docx-converted pages have no text layer, and that's fine.
     try { state.pageLines.push(await extractTextLines(page, scale, vp1.height)); }
     catch (tlErr) { state.pageLines.push([]); }
     var displayH = vp1.height * scale;
@@ -2179,7 +2254,7 @@ function mountField(f) {
   wrap.appendChild(el);
 
   if (state.mode === 'prep') {
-    // signer badge — click to cycle Signer 1 → 2 → 3 → 4 → 1
+    // signer badge, click to cycle Signer 1 → 2 → 3 → 4 → 1
     var badge = document.createElement('span');
     badge.className = 'sbadge' + ((f.signer || 1) > 1 ? ' s' + f.signer : '');
     badge.textContent = 'Signer ' + (f.signer || 1);
@@ -2226,7 +2301,7 @@ function mountField(f) {
   } else {
     var v = state.values[f.id];
     if (v && !isMyField(f)) {
-      // already completed by a previous signer — show it, locked
+      // already completed by a previous signer, show it locked
       el.classList.add('filled', 'locked');
       el.innerHTML = '';
       if (v.sigDataUrl) {
@@ -2239,7 +2314,7 @@ function mountField(f) {
         el.appendChild(sp);
       }
     } else if (!isMyField(f)) {
-      // waiting on a later signer — visible but untouchable
+      // waiting on a later signer, visible but untouchable
       el.classList.add('locked');
       el.innerHTML = '';
       var lbl = document.createElement('span');
@@ -2346,18 +2421,18 @@ function openSendModal() {
     row.dataset.signer = n;
     var who = used.length > 1 ? 'Signer ' + (i + 1) + (i === 0 ? ' (signs first)' : '') : "Signer";
     var lab1 = document.createElement('label');
-    lab1.textContent = who + " — email";
+    lab1.textContent = who + ": email";
     var em = document.createElement('input');
     em.type = 'email'; em.className = 'sendSignerEmail'; em.placeholder = 'name@company.com';
     var lab2 = document.createElement('label');
-    lab2.textContent = who + " — name (optional)";
+    lab2.textContent = who + ": name (optional)";
     var nm = document.createElement('input');
     nm.type = 'text'; nm.className = 'sendSignerName'; nm.placeholder = 'Jane Smith';
     row.appendChild(lab1); row.appendChild(em); row.appendChild(lab2); row.appendChild(nm);
     box.appendChild(row);
   });
   document.getElementById('sendOrderNote').style.display = used.length > 1 ? 'block' : 'none';
-  // Remember the sender's own address between documents — it's where redlines return to.
+  // Remember the sender's own address between documents, it's where redlines return to.
   var se = document.getElementById('senderEmail');
   if (!se.value) {
     try { se.value = localStorage.getItem('gohvioSenderEmail') || getFreeEmail() || ''; }
@@ -2403,7 +2478,7 @@ async function sendForSignature() {
   var senderEmail = (document.getElementById('senderEmail').value || '').trim().toLowerCase() || freeEmail || '';
   var allowRedline = document.getElementById('allowRedline').checked;
   if (allowRedline && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(senderEmail)) {
-    toast('Enter your own email too — that is where proposed changes come back to. ' +
+    toast('Enter your own email too, that is where proposed changes come back to. ' +
           '(Or untick “Allow signers to propose changes”.)');
     return;
   }
@@ -2444,10 +2519,10 @@ async function sendForSignature() {
   } catch (err) {
     if (/Bad key/i.test(err.message)) localStorage.removeItem('gohvioEsignKey');
     if (/free document already used/i.test(err.message)) {
-      // Their 1 free document is spent — show the dialog again without the
+      // Their 1 free document is spent, show the dialog again without the
       // free option, then retry the send with whatever they choose.
       busy(false);
-      toast('Your 1 free document has been used. Subscribe for $1/month for unlimited documents.');
+      toast('Your 1 free document has been used. Subscribe for $1/month, or $10/year and save 17%, for unlimited documents.');
       var cred2 = await requestEsignCred(true);
       if (cred2 && cred2.key) { await sendForSignature(); }
       return;
@@ -2516,7 +2591,7 @@ function updateProgress() {
   var txt = done + ' of ' + mine.length + (state.signers.length > 1 ? ' of your' : '') + ' fields completed';
   if (done === 0 && mine.length) txt = 'Click the pulsing colored boxes on the document to fill them · ' + txt;
   if (state.signers.length > 1 && state.signerIndex < state.signers.length - 1) {
-    txt += ' — next: ' + signerLabel(state.signerIndex + 2);
+    txt += '. Next: ' + signerLabel(state.signerIndex + 2);
   }
   p.textContent = txt;
 }
@@ -2621,7 +2696,7 @@ function applySignature() {
    rejects each one. Only when nothing is left open can the document be signed.
    ==========================================================================*/
 
-var rlTool = null;        // null | 'edit' | 'comment' — which tool is armed
+var rlTool = null;        // null | 'edit' | 'comment'. Which tool is armed
 var rlEditing = null;     // the redline currently open in the modal
 var rlIsNew = false;
 
@@ -2682,7 +2757,7 @@ function sliceSegment(s, x0, x1) {
 }
 
 /* Read back the wording sitting under a rectangle, using the PDF's text layer.
-   Returns '' for scanned pages with no text layer — the signer can still type
+   Returns '' for scanned pages with no text layer, the signer can still type
    what the original said. */
 function originalTextIn(pageIdx, rect) {
   var lines = (state.pageLines && state.pageLines[pageIdx]) || [];
@@ -2740,7 +2815,7 @@ function enableRedlineDraw() {
         var rw = Math.abs(cx - sx), rh = Math.abs(cy - sy);
         band.remove();
         if (rw < 8 || rh < 5) {
-          toast('Drag across the wording you want to change — a single click is too small to select text.');
+          toast('Drag across the wording you want to change. A single click is too small to select text.');
           return;
         }
         armTool(null);
@@ -2764,11 +2839,11 @@ function openRedlineModal(r, isNew) {
   document.getElementById('rlOriginalWrap').style.display = isComment ? 'none' : 'block';
   document.getElementById('rlProposedWrap').style.display = isComment ? 'none' : 'block';
   document.getElementById('rlOriginal').textContent = r.original ||
-    '(no selectable text here — describe the change below)';
+    '(no selectable text here, describe the change below)';
   document.getElementById('rlProposed').value = r.proposed || '';
   document.getElementById('rlNote').value = r.note || '';
   document.getElementById('rlNoteLabel').textContent = isComment
-    ? 'Your comment' : 'Reason (optional — the sender sees this)';
+    ? 'Your comment' : 'Reason (optional; the sender sees this)';
   document.getElementById('rlNote').placeholder = isComment
     ? 'e.g. Who is responsible for insurance during the handover period?'
     : 'e.g. Our standard payment terms are 60 days.';
@@ -2873,7 +2948,7 @@ function updateRedlineUi() {
   if (open) {
     var p = document.getElementById('signProgress');
     if (p) p.textContent = 'You have ' + open + ' proposed change' + (open === 1 ? '' : 's') +
-      ' waiting. Send them to the sender for approval — you can sign once they respond.';
+      ' waiting. Send them to the sender for approval. You can sign once they respond.';
   }
 }
 
@@ -2982,7 +3057,7 @@ function renderReviewPanel() {
     btn.disabled = true;
   } else {
     var acc = state.redlines.filter(function (r) { return r.status === 'accepted'; }).length;
-    status.textContent = 'All decided — ' + acc + ' accepted, ' +
+    status.textContent = 'All decided: ' + acc + ' accepted, ' +
       (state.redlines.length - acc) + ' rejected.';
     btn.disabled = false;
   }
@@ -3049,12 +3124,12 @@ async function sendChangesBack() {
     } catch (err) {
       console.error(err);
       downloadBlob(new Blob([html], { type: 'text/html' }), fname);
-      toast('Sending failed (' + err.message + '). A file was downloaded instead — email it to the sender.');
+      toast('Sending failed (' + err.message + '). A file was downloaded instead. Email it to the sender.');
       return;
     } finally { busy(false); }
   }
   downloadBlob(new Blob([html], { type: 'text/html' }), fname);
-  toast('Your proposed changes were saved to a file. Email it back to the sender — they open it to accept or reject each one.');
+  toast('Your proposed changes were saved to a file. Email it back to the sender. They open it to accept or reject each one.');
 }
 
 /* Sender -> signer: decisions made, send the document back to be signed. */
@@ -3096,12 +3171,12 @@ async function sendBackForSignature() {
     } catch (err) {
       console.error(err);
       downloadBlob(new Blob([html], { type: 'text/html' }), fname);
-      toast('Sending failed (' + err.message + '). A file was downloaded instead — email it back to the signer.');
+      toast('Sending failed (' + err.message + '). A file was downloaded instead. Email it back to the signer.');
       return;
     } finally { busy(false); }
   }
   downloadBlob(new Blob([html], { type: 'text/html' }), fname);
-  toast('Revised document downloaded. Email it back to the signer — accepted changes are marked on it.');
+  toast('Revised document downloaded. Email it back to the signer. Accepted changes are marked on it.');
 }
 
 // ---------- certificate of completion ----------
@@ -3113,7 +3188,7 @@ async function sha256Hex(bytes) {
 
 /* Appends a "Schedule of Negotiated Changes": every change that was proposed
    during negotiation, who proposed it, and whether the sender accepted it.
-   Rejected changes are kept on the record deliberately — the schedule is the
+   Rejected changes are kept on the record deliberately, the schedule is the
    audit trail of what the parties agreed and what they didn't. */
 function addChangeSchedulePages(doc, helv, bold) {
   var red = PDFLib.rgb(0.776, 0.157, 0.157);
@@ -3146,7 +3221,7 @@ function addChangeSchedulePages(doc, helv, bold) {
   wrap('Schedule of Negotiated Changes', bold, 20, teal, 0, 10);
   wrap('Document: ' + state.docName, helv, 11, dark, 0, 12);
 
-  // Part A — tracked changes that arrived in the uploaded Word file and were
+  // Part A: tracked changes that arrived in the uploaded Word file and were
   // resolved before the document was ever sent out.
   if (state.trackedLog && state.trackedLog.length) {
     var tAcc = state.trackedLog.filter(function (c) { return c.decision === 'accept'; }).length;
@@ -3166,7 +3241,7 @@ function addChangeSchedulePages(doc, helv, bold) {
       wrap('(' + c.n + ')  ' + kind + (c.author ? '  ·  by ' + c.author : '') +
            (c.date ? '  ·  ' + c.date.replace('T', ' ').replace('Z', ' UTC') : ''), bold, 10.5, dark, 0, 4);
       var ok = c.decision === 'accept';
-      wrap(ok ? 'ACCEPTED — now part of the document' : 'REJECTED — original wording kept',
+      wrap(ok ? 'ACCEPTED: now part of the document' : 'REJECTED: original wording kept',
            bold, 9.5, ok ? green : grey, 0, 5);
       if (c.deleted) wrap('Struck out: “' + c.deleted + '”', helv, 9.5, grey, 12, 3);
       if (c.inserted) wrap('Inserted: “' + c.inserted + '”', helv, 9.5, ok ? green : grey, 12, 3);
@@ -3175,7 +3250,7 @@ function addChangeSchedulePages(doc, helv, bold) {
     y -= 8;
     if (y < 130) { page = doc.addPage([612, 792]); y = 730; }
     wrap('B.  Changes proposed by signers during negotiation', bold, 12.5, dark, 0, 6);
-    if (!state.redlines.length) wrap('None — no signer proposed a change to the document.', helv, 10, grey, 0, 10);
+    if (!state.redlines.length) wrap('None: no signer proposed a change to the document.', helv, 10, grey, 0, 10);
   }
 
   if (state.redlines.length) {
@@ -3249,14 +3324,14 @@ async function addCertificatePage(bytes, fingerprint) {
     var ta = state.trackedLog.filter(function (c) { return c.decision === 'accept'; }).length;
     y -= 4;
     line('Incoming redlines: ' + state.trackedLog.length + ' tracked change(s) in the uploaded Word file, ' +
-         ta + ' accepted — see the Schedule of Negotiated Changes.', helv, 11, dark);
+         ta + ' accepted, see the Schedule of Negotiated Changes.', helv, 11, dark);
     y -= 6;
   }
   if (state.redlines.length) {
     var na = state.redlines.filter(function (r) { return r.status === 'accepted'; }).length;
     y -= 4;
     line('Negotiation: ' + state.redlines.length + ' change(s) proposed, ' + na +
-         ' accepted — see the Schedule of Negotiated Changes.', helv, 11, dark);
+         ' accepted, see the Schedule of Negotiated Changes.', helv, 11, dark);
     y -= 6;
   }
   line('Document fingerprint (SHA-256):', bold, 12, dark);
@@ -3276,7 +3351,7 @@ async function finishAndDownload() {
   // Nothing gets signed while a proposed change is still waiting on the sender.
   if (openRedlines().length) {
     toast('You have ' + openRedlines().length + ' proposed change(s) awaiting approval. ' +
-          'Send them to the sender first — you can sign once they respond.');
+          'Send them to the sender first. You can sign once they respond.');
     return;
   }
   var multi = state.mode === 'sign' && state.signers.length > 1;
@@ -3292,7 +3367,7 @@ async function finishAndDownload() {
   for (var i = 0; i < toCheck.length; i++) {
     if (!fieldComplete(toCheck[i])) {
       toast(toCheck[i].type === 'date'
-        ? 'Please complete all your fields — dates must be MM/DD/YYYY.'
+        ? 'Please complete all your fields. Dates must be MM/DD/YYYY.'
         : 'Please complete all your fields before finishing.');
       return;
     }
@@ -3331,7 +3406,7 @@ async function finishAndDownload() {
           fileHtmlB64: bytesToB64(new TextEncoder().encode(fwdHtml)),
           prevPath: window.GOHVIO_PATH || ''  // server deletes this hop's stored file
         });
-        toast('Thank you — your part is done! The document was sent to ' + next.email +
+        toast('Thank you, your part is done! The document was sent to ' + next.email +
               ' to sign next. You’ll receive the final signed PDF when everyone has finished.');
         showPromoCta();
       } catch (err) {
@@ -3339,7 +3414,7 @@ async function finishAndDownload() {
         if (fwdHtml) {
           downloadBlob(new Blob([fwdHtml], { type: 'text/html' }),
             'SIGN-' + state.docName.replace(/\s+/g, '-') + '-next-signer.html');
-          toast('Sending failed (' + err.message + '). A signing file was downloaded instead — ' +
+          toast('Sending failed (' + err.message + '). A signing file was downloaded instead: ' +
                 'please email it to ' + next.email + '.');
         } else {
           toast('Sending failed: ' + err.message);
@@ -3348,7 +3423,7 @@ async function finishAndDownload() {
     } else if (fwdHtml) {
       downloadBlob(new Blob([fwdHtml], { type: 'text/html' }),
         'SIGN-' + state.docName.replace(/\s+/g, '-') + '-next-signer.html');
-      toast('Your part is done! A signing file was downloaded — please email it to ' +
+      toast('Your part is done! A signing file was downloaded. Please email it to ' +
             next.email + ' to sign next.');
       showPromoCta();
     } else {

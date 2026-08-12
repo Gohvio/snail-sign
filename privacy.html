@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Notice · Snail Sign</title>
+<meta name="description" content="How Snail Sign collects, uses, stores and otherwise processes personal information.">
+
+<!-- This page runs no JavaScript at all, so the policy can be far stricter
+     than the one on index.html: scripts are forbidden outright. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'none';
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  font-src 'self' data: https://fonts.gstatic.com;
+  img-src 'self' data: https://snailsign.com;
+  connect-src 'none';
+  object-src 'none';
+  base-uri 'self';
+  form-action 'none';
+">
+
+<link rel="icon" href="snail-logo.png">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=DM+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root { --teal:#0D7377; --coral:#FF6B6B; --dark:#0F1117; --light:#F9F8F6; --border:#ddd8d0; --muted:#6f6d69; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'DM Sans',sans-serif; background:var(--light); color:var(--dark); line-height:1.7; }
+  header { background:var(--dark); color:#fff; padding:14px 24px; display:flex; align-items:center; gap:12px; }
+  header img { width:44px; height:44px; border-radius:10px; }
+  header a { color:#fff; text-decoration:none; font-family:'Poppins',sans-serif; font-weight:700; font-size:18px; }
+  main { max-width:820px; margin:0 auto; padding:48px 24px 72px; }
+  h1 { font-family:'Poppins',sans-serif; font-size:32px; margin-bottom:6px; }
+  h2 { font-family:'Poppins',sans-serif; font-size:20px; margin:40px 0 10px; padding-top:8px; }
+  h3 { font-family:'Poppins',sans-serif; font-size:16px; margin:24px 0 8px; }
+  p { margin-bottom:14px; }
+  .meta { color:var(--muted); font-size:14px; margin-bottom:26px; }
+  .lede { font-size:17px; background:#fff; border:1px solid var(--border); border-left:4px solid var(--teal);
+          border-radius:8px; padding:18px 20px; margin-bottom:28px; }
+  .callout { background:#fff; border:1px solid var(--border); border-left:4px solid var(--coral);
+             border-radius:8px; padding:18px 20px; margin:8px 0 22px; }
+  .callout p:last-child, .lede p:last-child { margin-bottom:0; }
+  .toc { background:#fff; border:1px solid var(--border); border-radius:8px; padding:18px 22px 18px 40px; margin-bottom:36px; }
+  .toc li { margin-bottom:5px; }
+  ul, ol { margin:0 0 16px 22px; }
+  li { margin-bottom:9px; }
+  li > strong { font-weight:700; }
+  table { border-collapse:collapse; width:100%; margin:8px 0 18px; font-size:15px; }
+  th,td { border:1px solid var(--border); padding:9px 12px; text-align:left; vertical-align:top; }
+  th { background:#fff; font-family:'Poppins',sans-serif; font-size:14px; }
+  a { color:var(--teal); }
+  footer { border-top:1px solid var(--border); margin-top:52px; padding-top:20px; font-size:14px; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <img src="snail-logo.png" alt="">
+  <a href="/">Snail Sign</a>
+</header>
+
+<main>
+  <h1>Privacy Notice</h1>
+  <p class="meta">Version date: 11 August 2026</p>
+
+  <div class="lede">
+    <p><strong>In brief.</strong> While you are preparing a document, it never leaves your computer.
+    It is uploaded only when you click Send, and then only so that your signer can be emailed a link
+    to it. Once every signer has finished, the stored copy is deleted automatically. We collect only
+    what the delivery requires, we do not read your documents, we do not sell or share personal
+    information, and we do not use your files to train artificial intelligence.</p>
+  </div>
+
+  <h2>Purpose</h2>
+  <p>This Privacy Notice ("Notice") explains how Gohvio, Inc. ("Gohvio", "we", "us", "our") collects,
+  uses, discloses, retains, and otherwise processes personal information about individuals ("you")
+  who access or use snailsign.com, the Snail Sign web tool, the signing files it generates, and the
+  hosted send-for-signature service (together, the "Services"). By using the Services you
+  acknowledge that we will process personal information as described in this Notice.</p>
+  <p>Snail Sign is unusual among signing tools in that most of its work happens on your own device
+  rather than on our servers. Understanding that distinction is the key to understanding this
+  Notice, so it is set out explicitly in Section 1.</p>
+  <p>Where you use the Services to send a document to another person, you determine what that
+  document contains and who receives it. In relation to the contents of your document you act as
+  the controller of that information and we act as a processor, handling it only to carry out the
+  delivery you requested. If your organisation requires a separate data processing agreement,
+  contact us using the details in Section 12.</p>
+  <p>This Notice does not apply to third-party websites, applications, or services that you may
+  reach from the Services. Please review their own terms and policies before using them.</p>
+
+  <div class="toc">
+    <ol>
+      <li><a href="#s1">Collection of Personal Information</a></li>
+      <li><a href="#s2">Use of Personal Information and Lawful Bases for Processing</a></li>
+      <li><a href="#s3">Disclosure of Personal Information</a></li>
+      <li><a href="#s4">Retention and Deletion of Personal Information</a></li>
+      <li><a href="#s5">Your Choices</a></li>
+      <li><a href="#s6">Your Privacy Rights</a></li>
+      <li><a href="#s7">Children's Privacy</a></li>
+      <li><a href="#s8">Notice to California Residents</a></li>
+      <li><a href="#s9">How We Protect Your Personal Information</a></li>
+      <li><a href="#s10">International Transfers of Personal Information</a></li>
+      <li><a href="#s11">Changes to This Privacy Notice</a></li>
+      <li><a href="#s12">How to Contact Us</a></li>
+    </ol>
+  </div>
+
+  <h2 id="s1">1. Collection of Personal Information</h2>
+
+  <h3>1.1 Information we do not collect: preparing a document</h3>
+  <p>When you open a document in Snail Sign, it is read and rendered entirely inside your own web
+  browser. Placing fields, typing or drawing a signature, and producing a flattened signed PDF all
+  occur on your device. Accordingly:</p>
+  <ul>
+    <li>If you prepare a document and never click Send, no part of that document is transmitted to
+    us, and we have no record of its existence, its contents, or the people named in it.</li>
+    <li>If you use the offline workflow, in which you download a self-contained signing file and
+    email it yourself, the document does not pass through our systems at any point.</li>
+    <li>We do not receive, read, index, or scan the contents of any document at any stage.</li>
+  </ul>
+
+  <h3>1.2 Information you provide when you send for signature</h3>
+  <p>Clicking <strong>Send for signature</strong> is the point at which information leaves your
+  browser. You provide us with the following, for the sole purpose of delivering the document to the
+  people you named:</p>
+  <ul>
+    <li><strong>Document data.</strong> The document itself, packaged as a self-contained signing
+    file, together with its file name.</li>
+    <li><strong>Signer contact information.</strong> The name and email address of each signer you
+    enter, up to four signers.</li>
+    <li><strong>Sender contact information.</strong> Your own name and email address, so that you
+    can be copied on the request and sent the completed document.</li>
+    <li><strong>Message content.</strong> Any note you choose to add to the signature request
+    email.</li>
+    <li><strong>Signature data.</strong> The typed or drawn signature, dates, and text that each
+    signer applies. These are applied on the signer's device and are returned to us only as part of
+    the completed document file.</li>
+  </ul>
+  <p>Because you supply information about other people when you name your signers, you are
+  responsible for ensuring you have a proper basis for doing so, and for the accuracy of the email
+  addresses you enter.</p>
+
+  <h3>1.3 Information we collect automatically</h3>
+  <ul>
+    <li><strong>Anonymous counts.</strong> The site records two aggregate counters: that a page
+    visit occurred, and that a signing file was downloaded. These carry no name, email address,
+    IP-based identifier, device identifier, or document information, and cannot be traced back to
+    you or to a particular document.</li>
+    <li><strong>No cookies or trackers.</strong> We do not set cookies, advertising trackers,
+    pixels, web beacons, session replay tools, or third-party analytics on snailsign.com.</li>
+    <li><strong>Server logs held by our providers.</strong> Our infrastructure providers keep
+    routine operational logs, which may include IP addresses and timestamps, for security and
+    reliability. We do not use those logs for marketing or profiling.</li>
+  </ul>
+
+  <h3>1.4 Information we receive from other sources</h3>
+  <ul>
+    <li><strong>Payment and subscription information.</strong> If you subscribe for an access key,
+    Stripe, Inc. processes the payment and provides us with your email address, a customer
+    reference, and subscription status. Card numbers and security codes go directly to Stripe. We
+    never see, receive, or store them.</li>
+  </ul>
+
+  <h3>1.5 Information stored only on your device</h3>
+  <p>The following are saved in your browser's local storage on your own device and are never
+  transmitted to us:</p>
+  <ul>
+    <li>Your access key, so that you do not have to paste it for every document.</li>
+    <li>Your sender email address, so that you do not have to retype it.</li>
+    <li>Your letterhead logo, if you upload one.</li>
+  </ul>
+  <p>Clearing your browser storage removes them. This information is scoped to the exact website
+  address you use, so it does not follow you to a different browser, device, or domain.</p>
+
+  <h2 id="s2">2. Use of Personal Information and Lawful Bases for Processing</h2>
+  <p>We use personal information only for the purposes below. Where the UK GDPR, EU GDPR, or a
+  similar law applies, the lawful basis is shown alongside each purpose.</p>
+  <table>
+    <tr><th>Purpose</th><th>Information used</th><th>Lawful basis</th></tr>
+    <tr><td>Delivering a signature request to the signers you named, in the order you set</td>
+        <td>Document data, signer and sender contact information, message content</td>
+        <td>Performance of a contract with you; our legitimate interest in operating the service you requested</td></tr>
+    <tr><td>Returning the completed document to every party</td>
+        <td>Document data, signer and sender contact information</td>
+        <td>Performance of a contract with you</td></tr>
+    <tr><td>Issuing, validating, and deactivating access keys</td>
+        <td>Subscriber email address, access key, Stripe customer reference</td>
+        <td>Performance of a contract with you</td></tr>
+    <tr><td>Taking payment and keeping statutory billing records</td>
+        <td>Subscription and billing information held by Stripe</td>
+        <td>Performance of a contract with you; compliance with tax and accounting law</td></tr>
+    <tr><td>Protecting the service against abuse, spam, and fraud</td>
+        <td>Access key usage, provider logs</td>
+        <td>Our legitimate interest in keeping the service secure and available</td></tr>
+    <tr><td>Understanding aggregate usage volume</td>
+        <td>Anonymous counters only</td>
+        <td>Our legitimate interest in maintaining the service</td></tr>
+    <tr><td>Responding to your questions and privacy requests</td>
+        <td>The contact details and content of your message</td>
+        <td>Our legitimate interest in supporting users; compliance with legal obligations</td></tr>
+  </table>
+  <p><strong>What we never do.</strong> We do not sell personal information. We do not share it for
+  cross-context behavioural advertising. We do not use your documents, signatures, signer details,
+  or message content to train artificial intelligence or machine learning models, whether ours or a
+  third party's. We do not build advertising or marketing profiles about you. We do not read the
+  contents of your documents.</p>
+
+  <h2 id="s3">3. Disclosure of Personal Information</h2>
+  <p>We disclose personal information only in the following circumstances.</p>
+  <ul>
+    <li><strong>To the people you name.</strong> Your document, your name, and your email address
+    are disclosed to the signers you enter, because that is the entire purpose of the service.</li>
+    <li><strong>To service providers acting on our instructions.</strong> The list is deliberately
+    short:
+      <ul>
+        <li><strong>Supabase.</strong> Storage and the server function that hold documents and
+        signing requests while they are in progress.</li>
+        <li><strong>Resend.</strong> Delivery of signature request emails and completed document
+        emails.</li>
+        <li><strong>Stripe.</strong> Subscription payments, invoicing, and receipts.</li>
+        <li><strong>GitHub Pages.</strong> Hosting of the static website files. The site is served
+        from GitHub's infrastructure, which receives standard web request information.</li>
+      </ul>
+      Each provider is permitted to process personal information only to perform the service
+      described here, and not for its own purposes.
+    </li>
+    <li><strong>Where legally compelled.</strong> We may disclose information where we are required
+    to do so by valid legal process, such as a subpoena, court order, or equivalent lawful demand,
+    or where disclosure is reasonably necessary to investigate suspected fraud or a threat to the
+    safety of any person. In practice, and because of the deletion described in Section 4, there is
+    frequently nothing left for us to produce.</li>
+    <li><strong>In a business transfer.</strong> If Gohvio, Inc. is involved in a merger,
+    acquisition, financing, reorganisation, or sale of assets, personal information may be
+    transferred as part of that transaction. Any recipient would remain bound by this Notice, or by
+    a notice at least as protective, and we would post notice of the change on this page.</li>
+  </ul>
+
+  <h2 id="s4">4. Retention and Deletion of Personal Information</h2>
+  <p>We keep personal information only for as long as the purpose it was collected for requires,
+  and then delete it.</p>
+  <table>
+    <tr><th>Category</th><th>Retention period</th></tr>
+    <tr><td>Document file held for an in-progress signing request</td>
+        <td>Deleted automatically once every signer has completed. If the request is not completed, it is deleted when the signing link expires 14 days after sending.</td></tr>
+    <tr><td>Signer names and email addresses</td>
+        <td>Deleted with the signing request they belong to, on completion or on expiry after 14 days.</td></tr>
+    <tr><td>Sender email address, file name, and message</td>
+        <td>Deleted with the signing request they belong to, on completion or on expiry after 14 days.</td></tr>
+    <tr><td>Subscriber email address, access key, and Stripe customer reference</td>
+        <td>Kept while your subscription is active. After cancellation, retained only as long as tax, accounting, and audit obligations require.</td></tr>
+    <tr><td>Anonymous counters</td>
+        <td>Retained indefinitely. They contain no personal information.</td></tr>
+    <tr><td>Correspondence with us</td>
+        <td>Retained as long as needed to handle your enquiry and to keep a record of privacy requests as the law requires.</td></tr>
+  </table>
+  <p>Signing links are cryptographically signed. A link therefore cannot be guessed, edited to point
+  at a different document, or altered to last longer than the 14-day period.</p>
+
+  <div class="callout">
+    <p><strong>Deletion is permanent, so keep your own copy.</strong> When a signing request
+    completes or expires, the stored document is destroyed. We do not maintain an archive, a backup
+    copy for your benefit, or a signing audit log, and we cannot recover a document for you
+    afterwards, whoever asks and for whatever reason. The completed PDF is emailed to every signer
+    and to you, and it carries a SHA-256 fingerprint you can use to demonstrate that a copy has not
+    been altered. Save that email somewhere you control. Snail Sign is a delivery tool and is not a
+    system of record.</p>
+  </div>
+
+  <h2 id="s5">5. Your Choices</h2>
+  <ul>
+    <li><strong>Use the tool without us.</strong> The preparation and signing workflow is free and
+    fully offline. If you download the signing file and email it yourself, we receive nothing at
+    all. This is the most privacy-protective way to use Snail Sign, and it is always available.</li>
+    <li><strong>Choose what goes in the document.</strong> You control the contents entirely. Please
+    see the caution in Section 9 about sensitive categories of information.</li>
+    <li><strong>Choose whether to save anything locally.</strong> You may decline to save your key
+    or logo, and you may clear your browser storage at any time.</li>
+    <li><strong>Marketing.</strong> We do not run marketing email campaigns from Snail Sign. The
+    only emails we send are transactional: signature requests, completed documents, key issuance,
+    billing notices from Stripe, and the change notices described in Section 11.</li>
+    <li><strong>Cancel at any time.</strong> Cancelling your subscription stops future charges and
+    deactivates your key.</li>
+  </ul>
+
+  <h2 id="s6">6. Your Privacy Rights</h2>
+  <p>Depending on where you live, you may have some or all of the following rights in relation to
+  personal information we hold about you:</p>
+  <ul>
+    <li><strong>Access.</strong> To ask what personal information we hold about you and obtain a
+    copy.</li>
+    <li><strong>Correction.</strong> To have inaccurate personal information corrected.</li>
+    <li><strong>Deletion.</strong> To have personal information erased, subject to records we are
+    legally required to keep.</li>
+    <li><strong>Portability.</strong> To receive certain information in a portable format.</li>
+    <li><strong>Objection and restriction.</strong> To object to, or ask us to restrict, processing
+    carried out on the basis of legitimate interests.</li>
+    <li><strong>Withdrawal of consent.</strong> Where processing rests on consent, to withdraw that
+    consent at any time, without affecting processing already carried out.</li>
+    <li><strong>Complaint.</strong> To lodge a complaint with your local data protection authority
+    or supervisory body.</li>
+  </ul>
+  <p>To exercise any of these rights, email <a href="mailto:emilygoh@gohvio.io">emilygoh@gohvio.io</a>.
+  We will respond within 30 days, or within any shorter period required by applicable law. We may
+  need to verify your identity before acting on a request, and we may decline a request that is
+  manifestly unfounded, excessive, or that would infringe another person's rights. We will not
+  discriminate against you for exercising any of these rights.</p>
+  <p>Please note the practical effect of Section 4: because documents and signing requests delete
+  themselves, an access or deletion request made after a request has completed will usually find
+  that there is nothing left to produce or erase. If the information you are asking about sits
+  inside a document that another person sent through Snail Sign, that person is the controller of
+  it, and you should direct your request to them in the first instance.</p>
+
+  <h2 id="s7">7. Children's Privacy</h2>
+  <p>The Services are intended for use by adults in a business or personal contracting capacity and
+  are not directed to children.</p>
+  <ul>
+    <li>We do not knowingly collect, use, or disclose personal information from any individual under
+    the age of 18, and no part of the Services is designed or marketed to appeal to children.</li>
+    <li>An access key may be purchased only by a person who is at least 18 years of age and legally
+    able to enter into a binding contract, as set out in our
+    <a href="terms.html#s1">Terms of Use</a>.</li>
+    <li>We do not knowingly sell or share the personal information of any individual under the age of
+    16, and we have no actual knowledge of having done so. We do not engage in any activity that
+    would require parental consent under the Children's Online Privacy Protection Act (COPPA) or
+    equivalent legislation in other jurisdictions.</li>
+    <li>Because a document is delivered to whatever email address the sender enters, we have no means
+    of verifying the age of a recipient before delivery. A sender is responsible for ensuring that a
+    document is sent only to a person entitled to receive and, where applicable, to sign it.</li>
+  </ul>
+  <p>If we become aware that we hold personal information relating to a child in circumstances that
+  require its deletion, we will delete it promptly. If you believe that a child has provided personal
+  information to us, or that a document sent through the Services concerns a child in a way that
+  raises a concern, please contact us at
+  <a href="mailto:emilygoh@gohvio.io">emilygoh@gohvio.io</a> and we will investigate and act as
+  required by applicable law.</p>
+
+  <h2 id="s8">8. Notice to California Residents</h2>
+  <p>This section supplements the rest of this Notice for residents of California.</p>
+  <ul>
+    <li><strong>Categories collected.</strong> In the preceding twelve months we have collected
+    identifiers, including name and email address; commercial information, being subscription
+    status; and internet or network activity information limited to the anonymous counters and
+    provider logs described in Section 1.3. Documents you send may contain further categories, but
+    those are supplied by you, are not inspected by us, and are deleted as described in
+    Section 4.</li>
+    <li><strong>Sources, purposes, and disclosures.</strong> These are set out in Sections 1, 2,
+    and 3.</li>
+    <li><strong>Sale and sharing.</strong> We have not sold personal information, and we have not
+    shared personal information for cross-context behavioural advertising, in the preceding twelve
+    months. We do not do so now, and we do not knowingly do either in respect of anyone under 16
+    years of age.</li>
+    <li><strong>Sensitive personal information.</strong> We do not collect sensitive personal
+    information for the purpose of inferring characteristics, and we do not use or disclose it
+    beyond the purposes permitted without an obligation to offer a right to limit.</li>
+    <li><strong>Your rights.</strong> You have the rights to know, delete, correct, opt out of sale
+    or sharing, limit use of sensitive personal information, and be free from retaliation. Because
+    we neither sell nor share, no opt-out mechanism is required, but you may still make any request
+    by emailing us. You may use an authorised agent, in which case we will require written proof of
+    authorisation.</li>
+  </ul>
+
+  <h2 id="s9">9. How We Protect Your Personal Information</h2>
+  <ul>
+    <li><strong>Client-side processing.</strong> The strongest protection is architectural. Your
+    document is not uploaded unless you choose to send it.</li>
+    <li><strong>Encrypted transport and controlled storage.</strong> Data in transit is encrypted.
+    In-progress documents are held in private, access-controlled storage.</li>
+    <li><strong>Signed, short-lived links.</strong> Signing links are cryptographically signed and
+    expire after 14 days.</li>
+    <li><strong>Locked third-party code.</strong> Every external library the tool loads is pinned to
+    a cryptographic fingerprint using Subresource Integrity, and a Content Security Policy restricts
+    the servers the page may contact, so tampered code cannot run and cannot exfiltrate your
+    document.</li>
+  </ul>
+  <p><strong>Limits of these measures.</strong> No method of transmission over the internet, and no
+  method of electronic storage, is completely secure. We cannot and do not guarantee absolute
+  security. Two limits deserve to be stated plainly rather than buried:</p>
+  <ul>
+    <li><strong>Email is not encrypted end to end.</strong> Signature requests and completed
+    documents travel by email. Mail in transit between mail servers is not end-to-end encrypted, and
+    anyone controlling a mailbox or mail server in the chain could in principle read it. If a
+    document is highly sensitive, consider whether email is an appropriate channel for it.</li>
+    <li><strong>Sensitive categories of information.</strong> Snail Sign is a general purpose
+    signing tool. It is not designed, certified, or contractually offered for protected health
+    information under HIPAA, cardholder data under PCI DSS, information subject to export control,
+    or any other category carrying a special legal handling regime, and we do not enter into
+    business associate agreements. You choose what goes into your document, so please do not place
+    such material into one unless you have independently satisfied yourself that doing so is
+    appropriate.</li>
+  </ul>
+  <p>If a breach affecting your personal information occurs, we will notify you, and any regulator,
+  in the manner and within the timeframes that applicable law requires.</p>
+
+  <h2 id="s10">10. International Transfers of Personal Information</h2>
+  <p>Gohvio, Inc. is incorporated in the United States, and our service providers listed in
+  Section 3 process data in the United States. If you are located in the United Kingdom, the
+  European Economic Area, Switzerland, or another region with cross-border transfer rules, please
+  treat this as notice that clicking Send will cause the information described in Section 1.2 to be
+  transferred to and processed in the United States. Where required, such transfers are made under
+  appropriate safeguards, including the European Commission's Standard Contractual Clauses and the
+  UK Addendum, as incorporated into our agreements with those providers. You may request further
+  information about these safeguards using the contact details in Section 12.</p>
+
+  <h2 id="s11">11. Changes to This Privacy Notice</h2>
+  <ul>
+    <li>We may update this Notice from time to time, including to reflect changes in our practices
+    or in applicable law.</li>
+    <li>The revised Notice will be posted on this page and the version date at the top will be
+    updated.</li>
+    <li>Where a change is material, we will additionally send an email notice to every person
+    holding an active access key, at the address associated with their subscription, so that no
+    significant change happens quietly.</li>
+    <li>Changes take effect on the version date shown. Your continued use of the Services after that
+    date constitutes acceptance of the updated Notice. If you do not accept a change, please stop
+    using the Services and cancel any subscription.</li>
+  </ul>
+
+  <h2 id="s12">12. How to Contact Us</h2>
+  <p>Gohvio, Inc., trading as Gohvio, is the controller of the personal information described in
+  this Notice, other than the contents of documents you send, for which you are the controller and
+  we are the processor.</p>
+  <ul>
+    <li><strong>Privacy and data protection enquiries:</strong>
+    <a href="mailto:emilygoh@gohvio.io">emilygoh@gohvio.io</a></li>
+    <li><strong>Related documents:</strong> <a href="terms.html">Terms of Use</a></li>
+  </ul>
+
+  <footer>
+    <a href="/">&larr; Back to Snail Sign</a> &nbsp;&middot;&nbsp;
+    <a href="terms.html">Terms of Use</a>
+  </footer>
+</main>
+
+</body>
+</html>

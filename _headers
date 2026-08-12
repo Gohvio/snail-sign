@@ -4,7 +4,7 @@
 # support custom headers, so while the site is hosted there these have no
 # effect and the <meta http-equiv="Content-Security-Policy"> tag inside
 # index.html is doing the work instead. If you move hosting, these switch on
-# automatically — nothing else to do.
+# automatically, nothing else to do.
 #
 # Keep the CSP below in sync with the meta tag in index.html. The two extras
 # that can ONLY be set here (a meta tag cannot express them) are
