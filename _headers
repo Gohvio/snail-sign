@@ -1,0 +1,19 @@
+# Security headers for Snail Sign
+#
+# This file is read by Cloudflare Pages and Netlify. GitHub Pages does NOT
+# support custom headers, so while the site is hosted there these have no
+# effect and the <meta http-equiv="Content-Security-Policy"> tag inside
+# index.html is doing the work instead. If you move hosting, these switch on
+# automatically — nothing else to do.
+#
+# Keep the CSP below in sync with the meta tag in index.html. The two extras
+# that can ONLY be set here (a meta tag cannot express them) are
+# frame-ancestors and Strict-Transport-Security.
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; worker-src 'self' blob: https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https://gohvio.github.io https://snailsign.com; connect-src 'self' blob: https://xaffxerlsieiaqorlelm.supabase.co https://cdnjs.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
+  Cross-Origin-Opener-Policy: same-origin

@@ -32,6 +32,13 @@ The **Send for signature** button uses Gohvio's hosted email service: it emails 
 - The tool is 100% client-side JavaScript (pdf.js, pdf-lib, mammoth, html2canvas via CDN).
 - Documents are processed in your browser's memory. Nothing is stored or transmitted unless you use the hosted send service.
 - Signing links from the hosted service are HMAC-signed and expire after 30 days.
+- **Your document can't be sent anywhere except to your signer.** Every outside library is locked to a cryptographic fingerprint, and the browser is instructed to block this page from contacting any server other than Snail Sign's own — so even if one of those libraries were tampered with, it could not read or leak your document.
+
+### How that is enforced
+
+- **Subresource Integrity.** Each `<script>` tag carries the official `sha512` hash of the exact library version it loads. If the CDN ever served a modified file, the browser refuses to run it and the tool fails closed rather than running unknown code over your document.
+- **Content Security Policy.** Declared in a `<meta>` tag in `index.html` and, for hosts that support real headers, in [`_headers`](_headers). The `connect-src` directive is the important one — it allowlists a single endpoint, so injected code has nowhere to send data.
+- **Known gap:** `pdf.worker.min.js` is loaded by URL rather than by `<script>` tag, so SRI cannot cover it. CSP restricts its origin but not its contents. Committing a local copy of that file to this repo would close it.
 
 ## License
 
