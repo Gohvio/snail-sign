@@ -4045,7 +4045,8 @@ async function renderPdf() {
   container.innerHTML = '';
   state.pageDims = [];
   state.pageLines = [];
-  var pdf = await pdfjsLib.getDocument({ data: b64ToBytes(state.pdfBase64) }).promise;
+  // Hardening: the PDF renderer never uses eval.
+  var pdf = await pdfjsLib.getDocument({ data: b64ToBytes(state.pdfBase64), isEvalSupported: false }).promise;
   var displayW = Math.min(860, window.innerWidth - 40);
   for (var i = 1; i <= pdf.numPages; i++) {
     var page = await pdf.getPage(i);
