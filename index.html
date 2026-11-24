@@ -3329,6 +3329,7 @@ function stripHiddenText(ctx, xml) {
     if (!p.parentNode || !markHidden(ctx, p)) return;
     var left = Array.prototype.some.call(p.getElementsByTagNameNS(W_NS, 't'), function (t) { return t.textContent; }) ||
                p.getElementsByTagNameNS(W_NS, 'drawing').length > 0 ||
+               p.getElementsByTagNameNS(W_NS, 'pict').length > 0 ||     // older (VML) pictures
                p.getElementsByTagNameNS(W_NS, 'fldChar').length > 0 ||
                !!wKid(wKid(p, 'pPr'), 'sectPr');                     // keep section breaks
     var parent = p.parentNode;
