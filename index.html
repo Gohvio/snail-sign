@@ -119,6 +119,13 @@
   .step.active .num { background: #fff; color: var(--teal); }
   .step-sep { color: #c9c4bb; font-size: 13px; }
   #stepHint { flex-basis: 100%; text-align: center; font-size: 12.5px; color: #8a857c; padding-top: 6px; }
+  /* Shown after a Word file is converted: the sender checks every page before sending. */
+  #wordNotice { display: none; max-width: 860px; margin: 12px auto 0; padding: 12px 16px;
+    background: #FFF8E6; border: 1px solid #F4D58A; border-left: 4px solid #F4A825; border-radius: 8px;
+    font-size: 14px; line-height: 1.5; color: #0F1117; }
+  #wordNotice label { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-weight: 600; cursor: pointer; }
+  #wordNotice input { width: 18px; height: 18px; flex: none; }
+  #wordNotice.needs-tick { box-shadow: 0 0 0 3px rgba(244,168,37,.45); }
 
   /* First-time hint on the document */
   #dropHint {
@@ -1683,6 +1690,11 @@ html[data-theme="dark"] #mk .theme-toggle .moon{display:block}
     <div class="step" data-step="4"><span class="num">4</span>Everyone signs</div>
     <div id="stepHint">You're on step 2: drag the blocks below onto the document. Steps 3 and 4 are shown so you know what's ahead.</div>
   </div>
+  <div id="wordNotice" role="note">
+    <strong>Converted from Word.</strong> Check each page before you send: fonts and line breaks can differ
+    slightly from Word. For an exact copy, save it as PDF in Word and upload the PDF.
+    <label><input type="checkbox" id="wordChecked"> I&rsquo;ve checked every page</label>
+  </div>
   <div id="toolbar">
     <span class="hint" id="toolbarHint">Drag a block onto the document:</span>
     <div class="palette-item" draggable="true" data-type="text">&#9998; Text</div>
@@ -1931,7 +1943,7 @@ html[data-theme="dark"] #mk .theme-toggle .moon{display:block}
             padding:12px 26px;border-radius:10px;text-decoration:none;font-size:15px">Send my free document &rarr;</a>
 </div>
 
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 <div id="busy">Working&hellip;</div>
 
 <!-- ============================================================
@@ -2115,6 +2127,7 @@ var state = {
   mode: 'prep',            // 'prep' | 'sign' | 'review'
   stage: 'prep',           // 'prep' | 'negotiate' (signer may redline) | 'review' (sender decides) | 'sign'
   pdfBase64: null,         // base64 of the underlying PDF
+  fromWord: false,         // prep: the PDF was converted from a Word file, so the sender must check it
   docName: 'document',
   fields: [],              // {id, type, page, x, y, w, h, signer}  (fractions of page size; signer is 1-based)
   values: {},              // sign mode: id -> {text} | {sigDataUrl}
@@ -2257,6 +2270,9 @@ window.addEventListener('DOMContentLoaded', function () {
   });
   tintSignerSelect();
   document.getElementById('signerSelect').addEventListener('change', tintSignerSelect);
+  document.getElementById('wordChecked').addEventListener('change', function () {
+    document.getElementById('wordNotice').classList.remove('needs-tick');
+  });
   document.getElementById('allowRedline').addEventListener('change', function () {
     document.getElementById('senderEmailWrap').style.display = this.checked ? 'block' : 'none';
   });
@@ -2352,8 +2368,10 @@ async function handleFile(file) {
       // screen first; prep resumes from there once every change is decided.
       if (await tcLoad(buf)) return;
       state.pdfBase64 = await docxToPdfBase64(buf);
+      state.fromWord = true;
     } else {
       state.pdfBase64 = bytesToB64(new Uint8Array(buf));
+      state.fromWord = false;
       docxHiddenCount = 0;
     }
     await enterPrep();
@@ -2378,7 +2396,23 @@ async function enterPrep() {
   document.getElementById('btnGenerate').style.display = 'inline-block';
   document.getElementById('btnOpenSend').style.display = 'inline-block';
   document.getElementById('btnRestart').style.display = 'inline-block';
+  var note = document.getElementById('wordNotice');
+  note.style.display = state.fromWord ? 'block' : 'none';
+  note.classList.remove('needs-tick');
+  document.getElementById('wordChecked').checked = false;
   await renderPdf();
+}
+
+/* A converted Word file can differ slightly from Word's own layout, so nothing
+   goes out until the sender confirms they've checked every page. */
+function wordCheckedOrPrompt() {
+  if (!state.fromWord || document.getElementById('wordChecked').checked) return true;
+  var note = document.getElementById('wordNotice');
+  note.classList.add('needs-tick');
+  note.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.getElementById('wordChecked').focus({ preventScroll: true });
+  toast('This was converted from Word. Check each page, then tick \u201cI\u2019ve checked every page\u201d to continue.');
+  return false;
 }
 
 /* ================= incoming tracked changes (.docx redlined in Word) =================
@@ -2911,6 +2945,7 @@ async function tcApply() {
     var clean = await tc.zip.generateAsync({ type: 'arraybuffer' });
 
     state.pdfBase64 = await docxToPdfBase64(clean);
+    state.fromWord = true;
     tc = null;
     await enterPrep();
     var a = state.trackedLog.filter(function (c) { return c.decision === 'accept'; }).length;
@@ -4404,6 +4439,7 @@ function buildSigningHtml(extra) {
 
 function generateSigningFile() {
   if (!state.fields.length) { toast('Place at least one block first.'); return; }
+  if (!wordCheckedOrPrompt()) return;
   // embed credentials if already saved (so Finish can email copies); don't prompt here
   var key = getEsignKey();
   var freeEmail = key ? '' : getFreeEmail();
@@ -4432,6 +4468,7 @@ function usedSignerNumbers() {
 
 function openSendModal() {
   if (!state.fields.length) { toast('Place at least one block first.'); return; }
+  if (!wordCheckedOrPrompt()) return;
   var used = usedSignerNumbers();
   var box = document.getElementById('sendSigners');
   box.innerHTML = '';
@@ -4466,6 +4503,7 @@ function openSendModal() {
 }
 
 async function sendForSignature() {
+  if (!wordCheckedOrPrompt()) return;
   var rows = document.querySelectorAll('#sendSigners .signer-row');
   var signers = [];
   for (var i = 0; i < rows.length; i++) {
