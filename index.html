@@ -2354,12 +2354,19 @@ async function handleFile(file) {
       state.pdfBase64 = await docxToPdfBase64(buf);
     } else {
       state.pdfBase64 = bytesToB64(new Uint8Array(buf));
+      docxHiddenCount = 0;
     }
     await enterPrep();
+    if (docxHiddenCount) toast(hiddenTextNote());
   } catch (err) {
     console.error(err);
     toast('Could not read that file: ' + err.message);
   } finally { busy(false); }
+}
+
+function hiddenTextNote() {
+  return 'Some text in this Word file is set to hidden, so we left it out. Your signer won\u2019t see it. ' +
+    'If it belongs in the agreement, unhide it in Word and upload the file again.';
 }
 
 /* Leave the upload screen and show the block-placing workspace. */
@@ -2698,11 +2705,13 @@ var TC_LEGEND = /^\s*(redline\s*(key|legend)|key\s*to\s*(the\s*)?redline)\b/i;
 /* Returns true if the file had changes to review and the review screen is now up. */
 async function tcLoad(buf) {
   if (typeof JSZip === 'undefined') return false;
+  if (buf.byteLength > DOCX_MAX_BYTES) return false;   // docxToPdfBase64 refuses it with a message
   var zip, xmlText;
   try {
     zip = await JSZip.loadAsync(buf);
     var f = zip.file('word/document.xml');
     if (!f) return false;
+    try { docxCheckUnpackedSize(zip); } catch (big) { return false; }
     xmlText = await f.async('string');
   } catch (e) { return false; }
   // Cheap pre-check. The character class after the name stops <w:insideH> and
@@ -2906,7 +2915,8 @@ async function tcApply() {
     await enterPrep();
     var a = state.trackedLog.filter(function (c) { return c.decision === 'accept'; }).length;
     toast('Rebuilt clean: ' + a + ' change(s) accepted, ' + (state.trackedLog.length - a) +
-          ' rejected. Now place the blocks your signer needs to fill.');
+          ' rejected. Now place the blocks your signer needs to fill.' +
+          (docxHiddenCount ? ' ' + hiddenTextNote() : ''));
   } catch (err) {
     console.error(err);
     toast('Could not rebuild the document: ' + err.message);
@@ -2936,43 +2946,1022 @@ function setupTrackedChanges() {
   });
 }
 
-// Convert .docx -> HTML (mammoth) -> paginated page divs (break BETWEEN
-// paragraphs, never through a line of text) -> page images -> PDF.
-async function docxToPdfBase64(arrayBuffer) {
-  var result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
-  var baseCss = 'width:816px;padding:72px;background:#fff;' +
-    'font-family:Georgia,serif;font-size:15px;line-height:1.55;color:#111;';
+/* ============================================================================
+   WORD (.docx) -> PDF
+   mammoth gives us the words, bold/italic, lists and tables, but throws away
+   the layout: alignment, indents, spacing, fonts, numbering style, table
+   borders and widths, page breaks, page size, headers and footers. So we also
+   read Word's own XML (document, styles, numbering, theme, header, footer)
+   with JSZip and put that layout back onto mammoth's HTML, paragraph by
+   paragraph, matched by their text. A paragraph that can't be matched keeps
+   the document's default style; nothing is ever dropped because of it.
 
-  // Measure each top-level element's height at page width.
-  var measure = document.createElement('div');
-  measure.style.cssText = 'position:absolute;left:-10000px;top:0;' + baseCss;
-  measure.innerHTML = result.value || '<p>(empty document)</p>';
-  document.body.appendChild(measure);
+   Pagination cuts only between table rows, paragraphs or, as a last resort,
+   lines of text. The page slices are contiguous from the top of the document
+   to the bottom, so content taller than a page flows onto the next page
+   instead of being clipped (KNOWN_ISSUES P0-3). Before each page is drawn,
+   the visible part of every block on it is measured; if the pages together
+   don't show every block in full, the conversion stops with an error rather
+   than producing a short document. Files over 20 MB (or whose text unpacks
+   past 100 MB) and documents over 500 pages are refused the same way.
+   ==========================================================================*/
+var W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+var R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+var WP_NS = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
+var A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 
-  var contentH = 1056 - 144; // US Letter @96dpi minus 72px top/bottom margins
-  var pagesEls = [[]];       // elements per page
-  var used = 0;
-  var kids = Array.prototype.slice.call(measure.children);
-  kids.forEach(function (el) {
-    var style = getComputedStyle(el);
-    var h = el.offsetHeight + parseFloat(style.marginTop) + parseFloat(style.marginBottom);
-    if (used > 0 && used + h > contentH) { pagesEls.push([]); used = 0; }
-    pagesEls[pagesEls.length - 1].push(el);
-    used += h;
+function wKids(el, name) {
+  var out = [];
+  if (!el) return out;
+  for (var c = el.firstElementChild; c; c = c.nextElementSibling) {
+    if (c.namespaceURI === W_NS && c.localName === name) out.push(c);
+  }
+  return out;
+}
+function wKid(el, name) { return wKids(el, name)[0] || null; }
+function wAttr(el, name) {
+  return el && el.hasAttributeNS(W_NS, name) ? el.getAttributeNS(W_NS, name) : null;
+}
+function wNum(el, name) {
+  var n = parseFloat(wAttr(el, name));
+  return isFinite(n) ? n : null;
+}
+function wOn(el) {                      // <w:b/> is on, <w:b w:val="0"/> is off
+  if (!el) return null;
+  var v = wAttr(el, 'val');
+  return !(v === '0' || v === 'false' || v === 'off' || v === 'none');
+}
+function twPx(tw) { return (tw || 0) / 15; }          // twentieths of a point -> CSS px
+function hexColor(v) { return /^[0-9a-f]{6}$/i.test(v || '') ? '#' + v : null; }
+function cssFont(name) {
+  var n = String(name || '').replace(/["'\\;{}<>]/g, '').trim();
+  if (!n) return '"Times New Roman", serif';   // Word's own fallback
+  var serif = /times|georgia|cambria|garamond|book|palatino|baskerville|minion|serif/i.test(n) &&
+              !/sans/i.test(n);
+  return '"' + n + '", ' + (serif ? 'serif' : 'sans-serif');
+}
+
+function parseXml(text) {
+  if (!text) return null;
+  var d = new DOMParser().parseFromString(text, 'application/xml');
+  return d.getElementsByTagName('parsererror').length ? null : d;
+}
+async function zipXml(zip, path) {
+  var f = zip.file(path);
+  return f ? parseXml(await f.async('string')) : null;
+}
+
+/* Paragraph properties (w:pPr) onto a flat object. Later calls win. */
+function readPPr(pPr, o) {
+  if (!pPr) return;
+  var jc = wAttr(wKid(pPr, 'jc'), 'val');
+  if (jc) o.jc = ({ center: 'center', right: 'right', end: 'right', both: 'justify',
+                    distribute: 'justify', left: 'left', start: 'left' })[jc] || o.jc;
+  var ind = wKid(pPr, 'ind');
+  if (ind) {
+    var l = wNum(ind, 'left'); if (l == null) l = wNum(ind, 'start');
+    var r = wNum(ind, 'right'); if (r == null) r = wNum(ind, 'end');
+    if (l != null) o.indL = l;
+    if (r != null) o.indR = r;
+    var h = wNum(ind, 'hanging'), f = wNum(ind, 'firstLine');
+    if (h != null) o.first = -h; else if (f != null) o.first = f;
+  }
+  var sp = wKid(pPr, 'spacing');
+  if (sp) {
+    var b = wNum(sp, 'before'), a = wNum(sp, 'after'), ln = wNum(sp, 'line');
+    if (b != null) o.before = b;
+    if (a != null) o.after = a;
+    if (ln != null) { o.line = ln; o.lineRule = wAttr(sp, 'lineRule') || 'auto'; }
+  }
+  var pb = wOn(wKid(pPr, 'pageBreakBefore'));
+  if (pb != null) o.pbBefore = pb;
+  var cs = wOn(wKid(pPr, 'contextualSpacing'));
+  if (cs != null) o.contextual = cs;
+  var numPr = wKid(pPr, 'numPr');
+  if (numPr) {
+    var nid = wNum(wKid(numPr, 'numId'), 'val'), lvl = wNum(wKid(numPr, 'ilvl'), 'val');
+    if (nid != null) o.numId = nid;
+    if (lvl != null) o.ilvl = lvl;
+  }
+  var tabs = wKid(pPr, 'tabs');
+  if (tabs) {
+    var stop = wKids(tabs, 'tab').filter(function (t) {
+      var v = wAttr(t, 'val'); return v !== 'clear' && v !== 'bar';
+    })[0];
+    if (stop) o.tabPos = wNum(stop, 'pos');
+  }
+}
+
+/* Run properties (w:rPr) onto a flat object. */
+function readRPr(ctx, rPr, o) {
+  if (!rPr) return;
+  var sz = wNum(wKid(rPr, 'sz'), 'val');
+  if (sz != null) o.sz = sz;
+  var f = wKid(rPr, 'rFonts');
+  if (f) {
+    var name = wAttr(f, 'ascii') || wAttr(f, 'hAnsi');
+    var theme = wAttr(f, 'asciiTheme') || wAttr(f, 'hAnsiTheme');
+    if (!name && theme) name = /major/i.test(theme) ? ctx.theme.major : ctx.theme.minor;
+    if (name) o.font = name;
+  }
+  var c = hexColor(wAttr(wKid(rPr, 'color'), 'val'));
+  if (c) o.color = c;
+  ['b', 'i', 'caps'].forEach(function (k) {
+    var v = wOn(wKid(rPr, k));
+    if (v != null) o[k] = v;
   });
-  document.body.removeChild(measure);
+}
 
+function styleChain(ctx, id) {
+  var chain = [], seen = {};
+  while (id && ctx.styles[id] && !seen[id]) {
+    seen[id] = 1;
+    chain.unshift(ctx.styles[id]);
+    id = ctx.styles[id].basedOn;
+  }
+  return chain;
+}
+
+async function docxContext(zip) {
+  var ctx = { styles: {}, defPPr: null, defRPr: null, defaultPara: null,
+              theme: { minor: null, major: null }, num: {}, abs: {}, counters: {}, rels: {} };
+  var theme = await zipXml(zip, 'word/theme/theme1.xml');
+  if (theme) {
+    ['minor', 'major'].forEach(function (k) {
+      var font = theme.getElementsByTagNameNS(A_NS, k + 'Font')[0];
+      var latin = font && font.getElementsByTagNameNS(A_NS, 'latin')[0];
+      if (latin) ctx.theme[k] = latin.getAttribute('typeface');
+    });
+  }
+  var styles = await zipXml(zip, 'word/styles.xml');
+  if (styles) {
+    var dd = styles.getElementsByTagNameNS(W_NS, 'docDefaults')[0];
+    if (dd) {
+      ctx.defPPr = wKid(wKid(dd, 'pPrDefault'), 'pPr');
+      ctx.defRPr = wKid(wKid(dd, 'rPrDefault'), 'rPr');
+    }
+    wKids(styles.documentElement, 'style').forEach(function (s) {
+      var id = wAttr(s, 'styleId');
+      if (!id) return;
+      ctx.styles[id] = { type: wAttr(s, 'type'), basedOn: wAttr(wKid(s, 'basedOn'), 'val'),
+                         pPr: wKid(s, 'pPr'), rPr: wKid(s, 'rPr'), tblPr: wKid(s, 'tblPr') };
+      var def = s.getAttributeNS(W_NS, 'default');
+      if (wAttr(s, 'type') === 'paragraph' && (def === '1' || def === 'true')) ctx.defaultPara = id;
+    });
+  }
+  if (!ctx.defaultPara && ctx.styles.Normal) ctx.defaultPara = 'Normal';
+  var numbering = await zipXml(zip, 'word/numbering.xml');
+  if (numbering) {
+    wKids(numbering.documentElement, 'abstractNum').forEach(function (an) {
+      var lv = {};
+      wKids(an, 'lvl').forEach(function (l) {
+        lv[wNum(l, 'ilvl') || 0] = readLvl(l);
+      });
+      ctx.abs[wAttr(an, 'abstractNumId')] = lv;
+    });
+    wKids(numbering.documentElement, 'num').forEach(function (n) {
+      var over = {};
+      wKids(n, 'lvlOverride').forEach(function (o) {
+        var k = wNum(o, 'ilvl') || 0;
+        over[k] = { start: wNum(wKid(o, 'startOverride'), 'val'),
+                    lvl: wKid(o, 'lvl') ? readLvl(wKid(o, 'lvl')) : null };
+      });
+      ctx.num[wAttr(n, 'numId')] = { abs: wAttr(wKid(n, 'abstractNumId'), 'val'), over: over };
+    });
+  }
+  var rels = await zipXml(zip, 'word/_rels/document.xml.rels');
+  if (rels) {
+    Array.prototype.forEach.call(rels.getElementsByTagName('Relationship'), function (r) {
+      ctx.rels[r.getAttribute('Id')] = r.getAttribute('Target');
+    });
+  }
+  return ctx;
+}
+
+function readLvl(l) {
+  return { start: wNum(wKid(l, 'start'), 'val'), fmt: wAttr(wKid(l, 'numFmt'), 'val') || 'decimal',
+           text: wAttr(wKid(l, 'lvlText'), 'val'), pPr: wKid(l, 'pPr'),
+           isLgl: !!wKid(l, 'isLgl'), suff: wAttr(wKid(l, 'suff'), 'val') || 'tab' };
+}
+
+function numLevel(ctx, numId, ilvl) {
+  var n = ctx.num[numId];
+  if (!n) return null;
+  var o = n.over[ilvl] || {};
+  var base = o.lvl || (ctx.abs[n.abs] || {})[ilvl];
+  if (!base) return null;
+  var start = o.start != null ? o.start : base.start;
+  start = start == null ? 1 : Math.max(0, Math.min(9999, Math.floor(start)));   // hostile files can't stall the counter
+  return { start: start, fmt: base.fmt, text: base.text,
+           pPr: base.pPr, isLgl: base.isLgl, suff: base.suff };
+}
+
+function fmtNum(n, fmt) {
+  if (fmt === 'lowerLetter' || fmt === 'upperLetter') {
+    var ch = String.fromCharCode(97 + ((n - 1) % 26 + 26) % 26);
+    var s = new Array(Math.floor((n - 1) / 26) + 2).join(ch);
+    return fmt === 'upperLetter' ? s.toUpperCase() : s;
+  }
+  if (fmt === 'lowerRoman' || fmt === 'upperRoman') {
+    var map = [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'],
+               [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']];
+    var r = '', v = Math.max(1, n);
+    map.forEach(function (m) { while (v >= m[0]) { r += m[1]; v -= m[0]; } });
+    return fmt === 'upperRoman' ? r.toUpperCase() : r;
+  }
+  if (fmt === 'decimalZero') return (n < 10 ? '0' : '') + n;
+  return String(n);
+}
+
+function bulletChar(t) {
+  var c = (t || '').charAt(0);
+  var map = { '\uF0B7': '\u2022', '\uF0A7': '\u25AA', '\uF0D8': '\u27A2', '\uF0FC': '\u2713',
+              '\uF076': '\u2756', 'o': '\u25E6' };
+  if (map[c]) return map[c];
+  if (!c || (c >= '\uE000' && c <= '\uF8FF')) return '\u2022';
+  return c;
+}
+
+/* The number or bullet Word shows in front of a list paragraph. Advances the
+   counters, so call it once per paragraph, in document order. */
+function numLabel(ctx, numId, ilvl) {
+  ilvl = Math.max(0, Math.min(8, ilvl | 0));
+  var lv = numLevel(ctx, numId, ilvl);
+  if (!lv) return null;
+  // Word counts a list per abstract list, so a list split across two numIds
+  // carries on; a numId with its own start override restarts.
+  var n = ctx.num[numId];
+  var restarts = Object.keys(n.over).some(function (k) { return n.over[k].start != null; });
+  var ck = restarts ? 'n' + numId : 'a' + n.abs;
+  var c = ctx.counters[ck] || (ctx.counters[ck] = []);
+  c[ilvl] = c[ilvl] == null ? lv.start : c[ilvl] + 1;
+  c.length = ilvl + 1;                                   // deeper levels restart
+  if (lv.fmt === 'none') return { text: '', suff: lv.suff };
+  if (lv.fmt === 'bullet') return { text: bulletChar(lv.text), suff: lv.suff };
+  var text = (lv.text == null ? '%' + (ilvl + 1) + '.' : lv.text).replace(/%([1-9])/g, function (m, d) {
+    var k = +d - 1, L = numLevel(ctx, numId, k);
+    var v = c[k] != null ? c[k] : (L ? L.start : 1);
+    return fmtNum(v, lv.isLgl ? 'decimal' : (L ? L.fmt : 'decimal'));
+  });
+  return { text: text, suff: lv.suff };
+}
+
+/* Visit a paragraph's own content: skips nested paragraphs (text boxes),
+   deleted text and the paragraph's property block. */
+function walkOwn(el, fn) {
+  for (var c = el.firstElementChild; c; c = c.nextElementSibling) {
+    if (c.namespaceURI === W_NS && /^(p|del|pPr|rPr|moveFrom)$/.test(c.localName)) continue;
+    if (fn(c) === false) continue;
+    walkOwn(c, fn);
+  }
+}
+
+/* Everything we need to know about one Word paragraph. */
+function paraInfo(ctx, p) {
+  var o = {};
+  readPPr(ctx.defPPr, o);
+  readRPr(ctx, ctx.defRPr, o);
+  var pPr = wKid(p, 'pPr');
+  var sid = (pPr && wAttr(wKid(pPr, 'pStyle'), 'val')) || ctx.defaultPara;
+  styleChain(ctx, sid).forEach(function (st) { readPPr(st.pPr, o); readRPr(ctx, st.rPr, o); });
+  o.styleId = sid;
+  var direct = {};
+  readPPr(pPr, direct);
+  var numId = direct.numId != null ? direct.numId : o.numId;
+  var ilvl = direct.ilvl != null ? direct.ilvl : (o.ilvl || 0);
+  if (numId) {                         // list indents sit between style and direct formatting
+    var lv = numLevel(ctx, numId, ilvl);
+    if (lv) readPPr(lv.pPr, o);
+  }
+  readPPr(pPr, o);
+  o.numId = numId || 0;
+  o.ilvl = ilvl;
+
+  // Text, page breaks, and run formatting shared by every run (e.g. a title
+  // typed in 20pt Arial with no style) so it can be applied to the paragraph.
+  var text = '', seenText = false, brBefore = false, brAfter = false, runs = [];
+  walkOwn(p, function (c) {
+    if (c.namespaceURI !== W_NS) return;
+    if (c.localName === 't') { text += c.textContent; if (c.textContent) seenText = true; return false; }
+    if (c.localName === 'tab') { text += '\t'; return false; }
+    if (c.localName === 'br' && wAttr(c, 'type') === 'page') {
+      if (seenText) brAfter = true; else brBefore = true;
+      return false;
+    }
+    if (c.localName === 'r') {
+      var hasText = Array.prototype.some.call(c.getElementsByTagNameNS(W_NS, 't'),
+        function (t) { return t.textContent.trim(); });
+      if (hasText) {
+        var r = {};
+        var rPr = wKid(c, 'rPr');
+        var rs = rPr && wAttr(wKid(rPr, 'rStyle'), 'val');
+        styleChain(ctx, rs).forEach(function (st) { readRPr(ctx, st.rPr, r); });
+        readRPr(ctx, rPr, r);
+        r.len = c.textContent.length;
+        runs.push(r);
+      }
+    }
+  });
+  // Bold and italic sit on the runs now (pinRunEmphasis); the paragraph only
+  // takes them when every run has them, so one regular run stays regular.
+  // Size, font and colour aren't carried per run, so the paragraph takes the
+  // value that covers most of its text: a clause whose bold lead-in is 13pt
+  // and whose body is 12pt prints at 12pt, as most of it does in Word.
+  var styled = { sz: o.sz, font: o.font, color: o.color };
+  o.b = false; o.i = false;
+  if (runs.length) {
+    ['sz', 'font', 'color'].forEach(function (k) {
+      var weight = {};
+      runs.forEach(function (r) {
+        var v = r[k] != null ? r[k] : styled[k];
+        if (v == null) return;
+        weight[v] = (weight[v] || 0) + r.len;
+      });
+      var bestV = null, bestW = -1;
+      Object.keys(weight).forEach(function (v) { if (weight[v] > bestW) { bestW = weight[v]; bestV = v; } });
+      if (bestV != null) o[k] = k === 'sz' ? +bestV : bestV;
+    });
+    ['b', 'i', 'caps'].forEach(function (k) {
+      var v = runs[0][k];
+      if (v != null && runs.every(function (r) { return r[k] === v; })) o[k] = v;
+    });
+  }
+  var sect = pPr && wKid(pPr, 'sectPr');
+  if (sect && wAttr(wKid(sect, 'type'), 'val') !== 'continuous') brAfter = true;
+  o.text = text;
+  o.brBefore = brBefore || !!o.pbBefore;
+  o.brAfter = brAfter;
+  return o;
+}
+
+/* Text formatted as hidden in Word (w:vanish) doesn't print from Word, so it
+   must not reach the signer's PDF either: a signer would be signing wording
+   the sender never saw on paper. Removes hidden runs, and paragraphs whose
+   paragraph mark is hidden and that are left empty. Returns true if anything
+   was removed, and adds the number of affected paragraphs to docxHiddenCount. */
+var docxHiddenCount = 0;
+function toggleOf(rPr, name) { var v = wKid(rPr, name); return v ? wOn(v) : null; }
+function vanishOf(rPr) { return toggleOf(rPr, 'vanish'); }
+function chainToggle(ctx, id, name) {    // last word within one style's basedOn chain
+  var v = null;
+  styleChain(ctx, id).forEach(function (st) { var x = toggleOf(st.rPr, name); if (x != null) v = x; });
+  return v;
+}
+function chainVanish(ctx, id) { return chainToggle(ctx, id, 'vanish'); }
+function paraStyleId(ctx, p) {
+  var pPr = p && wKid(p, 'pPr');
+  return (pPr && wAttr(wKid(pPr, 'pStyle'), 'val')) || ctx.defaultPara;
+}
+/* vanish is a toggle (ECMA-376 17.7.3): a paragraph style and a character
+   style that both hide text cancel out. Direct formatting decides outright. */
+function runToggle(ctx, r, name) {      // b, i and vanish all follow the toggle rule
+  var p = r.parentNode;
+  while (p && !(p.namespaceURI === W_NS && p.localName === 'p')) p = p.parentNode;
+  var rPr = wKid(r, 'rPr');
+  var own = toggleOf(rPr, name);
+  if (own != null) return own;
+  var pv = chainToggle(ctx, paraStyleId(ctx, p), name);
+  var cv = chainToggle(ctx, rPr && wAttr(wKid(rPr, 'rStyle'), 'val'), name);
+  if (pv == null && cv == null) return !!toggleOf(ctx.defRPr, name);
+  return !!pv !== !!cv;
+}
+function runHidden(ctx, r) { return runToggle(ctx, r, 'vanish'); }
+
+/* mammoth only sees bold and italic written on the run itself, so a bold
+   paragraph style ("2.1 Fee Structure." in a heading-style clause) would either
+   vanish or, once the paragraph is styled, spread over the whole clause. Write
+   each run's real bold/italic onto the run, so mammoth marks exactly the right
+   words; the paragraph itself is only bold or italic when every run is. */
+function pinRunEmphasis(ctx, xml) {
+  var changed = false;
+  Array.prototype.slice.call(xml.getElementsByTagNameNS(W_NS, 'r')).forEach(function (r) {
+    ['b', 'i'].forEach(function (name) {
+      var rPr = wKid(r, 'rPr');
+      if (toggleOf(rPr, name) != null) return;               // already explicit
+      if (!runToggle(ctx, r, name)) return;                   // plain: mammoth's default
+      if (!rPr) { rPr = xml.createElementNS(W_NS, 'w:rPr'); r.insertBefore(rPr, r.firstChild); }
+      rPr.appendChild(xml.createElementNS(W_NS, 'w:' + name));
+      changed = true;
+    });
+  });
+  return changed;
+}
+function markHidden(ctx, p) {           // is the paragraph mark itself hidden?
+  var own = vanishOf(wKid(wKid(p, 'pPr'), 'rPr'));
+  if (own != null) return own;
+  var pv = chainVanish(ctx, paraStyleId(ctx, p));
+  return pv != null ? pv : !!vanishOf(ctx.defRPr);
+}
+function stripHiddenText(ctx, xml) {
+  var touched = [], changed = false;
+  Array.prototype.slice.call(xml.getElementsByTagNameNS(W_NS, 'r')).forEach(function (r) {
+    if (!r.parentNode || !runHidden(ctx, r)) return;
+    // A field's begin/separate/end markers must stay paired, or mammoth can fail.
+    if (r.getElementsByTagNameNS(W_NS, 'fldChar').length) return;
+    changed = true;
+    if (r.textContent.trim() || r.getElementsByTagNameNS(W_NS, 'drawing').length ||
+        r.getElementsByTagNameNS(W_NS, 'pict').length) {   // hidden pictures count too
+      var p = r.parentNode;
+      while (p && !(p.namespaceURI === W_NS && p.localName === 'p')) p = p.parentNode;
+      if (p && touched.indexOf(p) < 0) touched.push(p);
+    }
+    r.parentNode.removeChild(r);
+  });
+  Array.prototype.slice.call(xml.getElementsByTagNameNS(W_NS, 'p')).forEach(function (p) {
+    if (!p.parentNode || !markHidden(ctx, p)) return;
+    var left = Array.prototype.some.call(p.getElementsByTagNameNS(W_NS, 't'), function (t) { return t.textContent; }) ||
+               p.getElementsByTagNameNS(W_NS, 'drawing').length > 0 ||
+               p.getElementsByTagNameNS(W_NS, 'pict').length > 0 ||     // older (VML) pictures
+               p.getElementsByTagNameNS(W_NS, 'fldChar').length > 0 ||
+               !!wKid(wKid(p, 'pPr'), 'sectPr');                     // keep section breaks
+    var parent = p.parentNode;
+    var lastInCell = parent.namespaceURI === W_NS && parent.localName === 'tc' && wKids(parent, 'p').length === 1;
+    if (!left && !lastInCell) { parent.removeChild(p); changed = true; }
+  });
+  docxHiddenCount += touched.length;     // paragraphs that lost hidden content, not runs
+  return changed;                        // any removal at all means mammoth gets the rewrite
+}
+
+/* Header/footer text with PAGE and NUMPAGES fields turned into placeholders. */
+function hfText(p) {
+  var out = '', inInstr = false, instr = '', skip = false;
+  walkOwn(p, function (c) {
+    if (c.namespaceURI !== W_NS) return;
+    var n = c.localName;
+    if (n === 'fldSimple') {
+      var ins = c.getAttributeNS(W_NS, 'instr') || '';
+      if (/NUMPAGES/i.test(ins)) { out += '\u0002'; return false; }
+      if (/\bPAGE\b/i.test(ins)) { out += '\u0001'; return false; }
+      return;
+    }
+    if (n === 'fldChar') {
+      var t = wAttr(c, 'fldCharType');
+      if (t === 'begin') { inInstr = true; instr = ''; }
+      else if (t === 'separate') {
+        inInstr = false;
+        if (/NUMPAGES/i.test(instr)) { out += '\u0002'; skip = true; }
+        else if (/\bPAGE\b/i.test(instr)) { out += '\u0001'; skip = true; }
+      } else if (t === 'end') { inInstr = false; skip = false; }
+      return false;
+    }
+    if (n === 'instrText') { if (inInstr) instr += c.textContent; return false; }
+    if (n === 't') { if (!skip && !inInstr) out += c.textContent; return false; }
+    if (n === 'tab') { if (!skip) out += '\t'; return false; }
+  });
+  return out;
+}
+
+async function docxHeaderFooter(ctx, zip, sectPr, kind) {
+  var refs = wKids(sectPr, kind + 'Reference');
+  var ref = refs.filter(function (r) { return wAttr(r, 'type') === 'default'; })[0] || refs[0];
+  if (!ref) return [];
+  var target = ctx.rels[ref.getAttributeNS(R_NS, 'id')];
+  if (!target) return [];
+  var path = target.charAt(0) === '/' ? target.slice(1) : 'word/' + target;
+  var xml = await zipXml(zip, path);
+  if (!xml) return [];
+  stripHiddenText(ctx, xml);
+  pinRunEmphasis(ctx, xml);
+  return wKids(xml.documentElement, 'p').map(function (p) {
+    return { o: paraInfo(ctx, p), text: hfText(p) };
+  }).filter(function (h) { return h.text.replace(/\s/g, ''); });
+}
+
+function blockCss(el, o) {
+  var s = el.style;
+  s.textAlign = o.jc || 'left';
+  s.paddingLeft = twPx(o.indL) + 'px';
+  s.paddingRight = twPx(o.indR) + 'px';
+  s.textIndent = twPx(o.first) + 'px';
+  s.paddingTop = twPx(o.before) + 'px';           // padding, not margin: Word adds
+  s.paddingBottom = twPx(o.after) + 'px';         // space before + after, CSS would collapse it
+  if (o.line && (o.lineRule === 'exact' || o.lineRule === 'atLeast')) s.lineHeight = twPx(o.line) + 'px';
+  else s.lineHeight = ((o.line || 240) / 240 * 1.15).toFixed(3);
+  s.fontSize = ((o.sz || 22) * 2 / 3).toFixed(2) + 'px';  // half-points -> px
+  s.fontFamily = cssFont(o.font);
+  s.color = o.color || '#000';
+  s.fontWeight = o.b ? 'bold' : 'normal';
+  s.fontStyle = o.i ? 'italic' : 'normal';
+  s.textTransform = o.caps ? 'uppercase' : 'none';
+  var tab = o.tabPos && o.tabPos - (o.indL || 0) > 120 ? o.tabPos - (o.indL || 0) : 720;
+  s.tabSize = twPx(tab) + 'px';
+}
+
+function borderCss(b) {
+  if (!b) return null;
+  var v = wAttr(b, 'val');
+  if (!v || v === 'nil' || v === 'none') return 'none';
+  var w = Math.max(1, Math.round((wNum(b, 'sz') || 4) / 6 * 2) / 2);   // eighths of a pt -> px
+  var style = v === 'double' ? 'double' : /dot/.test(v) ? 'dotted' : /dash/.test(v) ? 'dashed' : 'solid';
+  if (style === 'double') w = Math.max(3, w);
+  return w + 'px ' + style + ' ' + (hexColor(wAttr(b, 'color')) || '#000');
+}
+
+function readBorders(el, into) {
+  if (!el) return;
+  ['top', 'left', 'bottom', 'right', 'insideH', 'insideV', 'start', 'end'].forEach(function (k) {
+    var b = wKid(el, k);
+    if (b) into[k === 'start' ? 'left' : k === 'end' ? 'right' : k] = borderCss(b);
+  });
+}
+
+function styleTable(ctx, t, x, contentW) {
+  var tblPr = wKid(x, 'tblPr');
+  var bd = {}, mar = { left: 108, right: 108 };
+  var sid = tblPr && wAttr(wKid(tblPr, 'tblStyle'), 'val');
+  styleChain(ctx, sid).forEach(function (st) {
+    readBorders(wKid(st.tblPr, 'tblBorders'), bd);
+    readMar(wKid(st.tblPr, 'tblCellMar'), mar);
+  });
+  readBorders(wKid(tblPr, 'tblBorders'), bd);
+  readMar(wKid(tblPr, 'tblCellMar'), mar);
+
+  var cols = wKids(wKid(x, 'tblGrid'), 'gridCol').map(function (g) { return twPx(wNum(g, 'w') || 0); });
+  var total = cols.reduce(function (a, b) { return a + b; }, 0);
+  if (total > 0) {
+    var k = total > contentW ? contentW / total : 1;
+    var cg = document.createElement('colgroup');
+    cols.forEach(function (w) {
+      var col = document.createElement('col');
+      col.style.width = (w * k) + 'px';
+      cg.appendChild(col);
+    });
+    t.insertBefore(cg, t.firstChild);
+    t.style.width = (total * k) + 'px';
+  } else {
+    t.style.width = '100%';
+  }
+  var jc = wAttr(wKid(tblPr, 'jc'), 'val');
+  if (jc === 'center') { t.style.marginLeft = 'auto'; t.style.marginRight = 'auto'; }
+  var ind = wNum(wKid(tblPr, 'tblInd'), 'w');
+  if (ind && jc !== 'center') t.style.marginLeft = twPx(ind) + 'px';
+
+  var xRows = wKids(x, 'tr'), hRows = t.rows;
+  if (xRows.length !== hRows.length) return;
+  for (var r = 0; r < xRows.length; r++) {
+    var xCells = wKids(xRows[r], 'tc').filter(function (tc) {
+      var vm = wKid(wKid(tc, 'tcPr'), 'vMerge');
+      return !vm || wAttr(vm, 'val') === 'restart';      // mammoth drops merged-away cells
+    });
+    var hCells = hRows[r].cells;
+    if (xCells.length !== hCells.length) continue;
+    for (var c = 0; c < xCells.length; c++) {
+      var td = hCells[c], tcPr = wKid(xCells[c], 'tcPr');
+      var own = {};
+      readBorders(wKid(tcPr, 'tcBorders'), own);
+      var edge = {
+        top: r === 0 ? bd.top : bd.insideH, bottom: r === xRows.length - 1 ? bd.bottom : bd.insideH,
+        left: c === 0 ? bd.left : bd.insideV, right: c === xCells.length - 1 ? bd.right : bd.insideV
+      };
+      ['top', 'bottom', 'left', 'right'].forEach(function (side) {
+        var v = own[side] || edge[side];
+        if (v) td.style['border' + side.charAt(0).toUpperCase() + side.slice(1)] = v;
+      });
+      var cm = { left: mar.left, right: mar.right };
+      readMar(wKid(tcPr, 'tcMar'), cm);
+      td.style.paddingLeft = twPx(cm.left) + 'px';
+      td.style.paddingRight = twPx(cm.right) + 'px';
+      var fill = hexColor(wAttr(wKid(tcPr, 'shd'), 'fill'));
+      if (fill) td.style.background = fill;
+      var va = wAttr(wKid(tcPr, 'vAlign'), 'val');
+      if (va === 'center') td.style.verticalAlign = 'middle';
+      else if (va === 'bottom') td.style.verticalAlign = 'bottom';
+    }
+  }
+}
+
+function readMar(el, into) {
+  if (!el) return;
+  ['left', 'right', 'start', 'end'].forEach(function (k) {
+    var v = wNum(wKid(el, k), 'w');
+    if (v != null) into[k === 'start' ? 'left' : k === 'end' ? 'right' : k] = v;
+  });
+}
+
+function ensureDocxCss() {
+  if (document.getElementById('ssDocxCss')) return;
+  var st = document.createElement('style');
+  st.id = 'ssDocxCss';
+  // Scoped reset: the site's own `* { margin:0; padding:0 }` and fonts must not
+  // decide how a contract looks.
+  st.textContent =
+    '.ss-docx{color:#000;background:#fff;text-align:left;overflow-wrap:break-word;line-height:1.15}' +
+    '.ss-docx p,.ss-docx h1,.ss-docx h2,.ss-docx h3,.ss-docx h4,.ss-docx h5,.ss-docx h6' +
+    '{margin:0;white-space:pre-wrap;font-size:inherit;font-weight:normal}' +
+    '.ss-docx table{border-collapse:collapse;table-layout:fixed;margin:0}' +
+    '.ss-docx td,.ss-docx th{vertical-align:top;padding:0 7.2px;text-align:left;font-weight:normal}' +
+    '.ss-docx img{max-width:100%}' +
+    '.ss-docx ol,.ss-docx ul{margin:0;padding-left:24px}' +
+    '.ss-docx .ss-num{display:inline-block;text-indent:0;white-space:pre}';
+  document.head.appendChild(st);
+}
+
+function ownText(el) {                 // an element's text minus nested lists and note markers
+  var t = '';
+  (function walk(n) {
+    for (var c = n.firstChild; c; c = c.nextSibling) {
+      if (c.nodeType === 3) t += c.nodeValue;
+      else if (c.nodeType === 1 && !/^(OL|UL)$/.test(c.tagName) &&
+               !(c.tagName === 'A' && /^(footnote|endnote)-ref/.test(c.id || ''))) walk(c);
+    }
+  })(el);
+  return t;
+}
+
+function textWithoutLabels(root) {
+  var t = '', tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), n;
+  while ((n = tw.nextNode())) if (!(n.parentNode.closest && n.parentNode.closest('.ss-num'))) t += n.nodeValue;
+  return t;
+}
+
+/* Lay a .docx out into page slices. Returns the laid-out DOM (caller removes
+   it) plus the page geometry. Kept separate from docxToPdfBase64 so the test
+   harness beside this repo can check that no row or paragraph falls between
+   two pages. */
+var DOCX_MAX_BYTES = 20 * 1024 * 1024, DOCX_MAX_PAGES = 500, DOCX_MAX_UNPACKED = 100 * 1024 * 1024;
+/* A small .docx can unpack to gigabytes. JSZip records each part's unpacked
+   size; it's not public API and a crafted file can misstate it, so this is a
+   defence layer, not a hard limit, and the other caps still apply. */
+function docxCheckUnpackedSize(zip) {
+  var size = 0;
+  Object.keys(zip.files).forEach(function (name) {     // every part, not only the body
+    try { size += zip.files[name]._data.uncompressedSize || 0; } catch (e) { /* unknown: other caps apply */ }
+  });
+  if (size > DOCX_MAX_UNPACKED) {
+    throw new Error('This Word file is too large to open here. Please save it as a PDF and upload that instead.');
+  }
+}
+async function layoutDocx(arrayBuffer) {
+  if (arrayBuffer.byteLength > DOCX_MAX_BYTES) {
+    throw new Error('This Word file is over 20 MB. Please save it as a PDF and upload that instead.');
+  }
+  ensureDocxCss();
+  var zip = await JSZip.loadAsync(arrayBuffer);
+  docxCheckUnpackedSize(zip);
+  var docXml = await zipXml(zip, 'word/document.xml');
+  var ctx = await docxContext(zip);
+  docxHiddenCount = 0;
+  var mammothInput = arrayBuffer;
+  // mammoth must not see hidden text either: strip the body, footnotes and
+  // endnotes it reads, and hand it the rewritten file.
+  var rewrote = false;
+  if (docXml && (stripHiddenText(ctx, docXml) | pinRunEmphasis(ctx, docXml))) {   // | : run both
+    zip.file('word/document.xml', new XMLSerializer().serializeToString(docXml));
+    rewrote = true;
+  }
+  var notes = ['word/footnotes.xml', 'word/endnotes.xml'];
+  for (var ni = 0; ni < notes.length; ni++) {
+    var nx = await zipXml(zip, notes[ni]);
+    if (nx && (stripHiddenText(ctx, nx) | pinRunEmphasis(ctx, nx))) {
+      zip.file(notes[ni], new XMLSerializer().serializeToString(nx));
+      rewrote = true;
+    }
+  }
+  if (rewrote) mammothInput = await zip.generateAsync({ type: 'arraybuffer' });
+  var result = await mammoth.convertToHtml({ arrayBuffer: mammothInput },
+    { styleMap: ['u => u'], ignoreEmptyParagraphs: false });
+
+  var body = docXml && docXml.getElementsByTagNameNS(W_NS, 'body')[0];
+  var sectPr = body ? wKids(body, 'sectPr').pop() : null;
+  var pgSz = wKid(sectPr, 'pgSz'), pgMar = wKid(sectPr, 'pgMar');
+  var geo = {
+    wTw: wNum(pgSz, 'w') || 12240, hTw: wNum(pgSz, 'h') || 15840,
+    top: wNum(pgMar, 'top'), right: wNum(pgMar, 'right'),
+    bottom: wNum(pgMar, 'bottom'), left: wNum(pgMar, 'left'),
+    header: wNum(pgMar, 'header'), footer: wNum(pgMar, 'footer')
+  };
+  ['top', 'right', 'bottom', 'left'].forEach(function (k) {
+    geo[k] = Math.max(0, Math.abs(geo[k] == null ? 1440 : geo[k]));
+  });
+  if (geo.header == null) geo.header = 720;
+  if (geo.footer == null) geo.footer = 720;
+  geo.wTw = Math.max(1440, Math.min(31680, geo.wTw));     // 1in to 22in, as Word allows
+  geo.hTw = Math.max(1440, Math.min(31680, geo.hTw));
+  geo.W = twPx(geo.wTw); geo.H = twPx(geo.hTw);
+  geo.contentW = Math.max(200, geo.W - twPx(geo.left) - twPx(geo.right));
+  geo.contentH = Math.max(200, geo.H - twPx(geo.top) - twPx(geo.bottom));
+
+  var base = {};
+  readPPr(ctx.defPPr, base);
+  readRPr(ctx, ctx.defRPr, base);
+  styleChain(ctx, ctx.defaultPara).forEach(function (st) { readRPr(ctx, st.rPr, base); });
+
+  var host = document.createElement('div');
+  host.className = 'ss-docx ss-docx-tmp';
+  host.style.cssText = 'position:absolute;left:-10000px;top:0;width:' + geo.contentW + 'px;';
+  host.style.fontSize = ((base.sz || 22) * 2 / 3) + 'px';
+  host.style.fontFamily = cssFont(base.font);
+  host.innerHTML = result.value || '<p>(empty document)</p>';
+  document.body.appendChild(host);
+  try {
+    return await layoutDocxSteps(ctx, zip, docXml, result, geo, host);
+  } catch (err) {
+    if (host.parentNode) host.parentNode.removeChild(host);
+    throw err;
+  }
+}
+
+async function layoutDocxSteps(ctx, zip, docXml, result, geo, host) {
+  var body = docXml && docXml.getElementsByTagNameNS(W_NS, 'body')[0];
+  var sectPr = body ? wKids(body, 'sectPr').pop() : null;
+  var key = function (s) { return s.replace(/\s+/g, ''); };
+  var srcKey = key(host.textContent);
+
+  // 1. Match each HTML block to its Word paragraph by text, in order.
+  var xParas = docXml ? Array.prototype.slice.call(docXml.getElementsByTagNameNS(W_NS, 'p')) : [];
+  // Every Word paragraph is read and numbered in document order, matched or
+  // not, so one paragraph we can't match never shifts the numbers after it.
+  var infos = xParas.map(function (p) {
+    var o = paraInfo(ctx, p);
+    o.label = o.numId ? numLabel(ctx, o.numId, o.ilvl || 0) : null;
+    return o;
+  });
+  // Match on letters and digits only: mammoth and Word disagree on symbols,
+  // non-breaking and soft hyphens.
+  var mkey = function (s) { return s.replace(/[^\p{L}\p{N}]/gu, ''); };
+  var xkeys = infos.map(function (o) { return mkey(o.text); });
+  var blocks = Array.prototype.filter.call(host.querySelectorAll('p,h1,h2,h3,h4,h5,h6,li'), function (el) {
+    return !el.closest('li[id^="footnote-"],li[id^="endnote-"]');
+  });
+  var props = new Map(), xi = 0;
+  blocks.forEach(function (el) {
+    var k = mkey(ownText(el));
+    // Blank paragraphs only match nearby; real text searches to the end.
+    var stop = k ? xParas.length : Math.min(xi + 6, xParas.length);
+    for (var j = xi; j < stop; j++) {
+      if (xkeys[j] !== k) continue;
+      // A far jump onto repeated text ("Name:", "Date:") would misalign
+      // everything in between; only take it when the text is unique.
+      if (j > xi + 6 && xkeys.indexOf(k, j + 1) !== -1) return;
+      props.set(el, infos[j]); xi = j + 1; return;
+    }
+  });
+
+  // 2. Word's "don't add space between paragraphs of the same style".
+  for (var b = 0; b + 1 < blocks.length; b++) {
+    var o1 = props.get(blocks[b]), o2 = props.get(blocks[b + 1]);
+    if (o1 && o2 && o1.styleId === o2.styleId) {
+      if (o1.contextual) { o1.after = 0; }
+      if (o2.contextual) { o2.before = 0; }
+    }
+  }
+
+  // 3. Style every block, number list items, flatten lists into paragraphs.
+  blocks.forEach(function (el) {
+    var o = props.get(el);
+    if (!o) {                                   // unmatched: document default, never dropped
+      o = {};
+      readPPr(ctx.defPPr, o);
+      readRPr(ctx, ctx.defRPr, o);
+      styleChain(ctx, ctx.defaultPara).forEach(function (st) { readPPr(st.pPr, o); readRPr(ctx, st.rPr, o); });
+    }
+    var target = el;
+    if (el.tagName === 'LI') {
+      target = document.createElement('p');
+      Array.prototype.slice.call(el.childNodes).forEach(function (n) {
+        if (!(n.nodeType === 1 && /^(OL|UL)$/.test(n.tagName))) target.appendChild(n);
+      });
+      el.__ssFlat = target;
+    }
+    blockCss(target, o);
+    var lab = props.has(el) ? o.label : null;
+    if (!lab && el.tagName === 'LI') {           // unmatched list item: keep mammoth's own number
+      var list = el.parentElement;
+      lab = { text: list.tagName === 'UL' ? '\u2022' :
+              (Array.prototype.indexOf.call(list.children, el) + 1) + '.', suff: 'tab' };
+      if (!(o.first < 0)) { o.indL = (o.indL || 0) + 360 * (el.parentElement.closest('li') ? 2 : 1); o.first = -360; blockCss(target, o); }
+    }
+    if (lab) {
+      if (lab.text) {
+        var span = document.createElement('span');
+        span.className = 'ss-num';
+        span.textContent = lab.text + (lab.suff === 'space' ? ' ' : '');
+        if (lab.suff !== 'space' && lab.suff !== 'nothing') {
+          if (o.first < 0) span.style.minWidth = twPx(-o.first) + 'px';
+          else span.textContent += '\t';
+        }
+        target.insertBefore(span, target.firstChild);
+      }
+    }
+    if (!ownText(target).trim() && !target.querySelector('img,br')) {
+      if (o.brBefore || o.brAfter) target.style.paddingTop = target.style.paddingBottom = '0px';
+      else target.appendChild(document.createElement('br'));   // an empty Word line still takes a line
+    }
+    if (o.brBefore && !el.closest('td,th')) target.setAttribute('data-ss-break-before', '');
+    if (o.brAfter && !el.closest('td,th')) target.setAttribute('data-ss-break-after', '');
+  });
+  Array.prototype.slice.call(host.querySelectorAll('ol,ul')).forEach(function (list) {
+    if (list.parentElement.closest('ol,ul')) return;   // nested lists go with their top-level list
+    if (list.querySelector('li[id^="footnote-"],li[id^="endnote-"]')) return;
+    var frag = document.createDocumentFragment();
+    (function collect(l) {
+      Array.prototype.forEach.call(l.children, function (li) {
+        if (li.__ssFlat) frag.appendChild(li.__ssFlat);
+        Array.prototype.forEach.call(li.querySelectorAll(':scope > ol, :scope > ul'), collect);
+      });
+    })(list);
+    if (list.parentNode) list.parentNode.replaceChild(frag, list);
+  });
+
+  // Safety net: restyling must never lose a word. If the text no longer
+  // matches what mammoth read, fall back to mammoth's plain HTML.
+  if (key(textWithoutLabels(host)) !== srcKey) {
+    console.error('docx restyle changed the text; using the plain conversion');
+    host.innerHTML = result.value || '<p>(empty document)</p>';
+  }
+
+  // 4. Tables and pictures, matched by order.
+  var xTbls = docXml ? Array.prototype.slice.call(docXml.getElementsByTagNameNS(W_NS, 'tbl')) : [];
+  var hTbls = host.querySelectorAll('table');
+  if (xTbls.length === hTbls.length) {
+    for (var t = 0; t < xTbls.length; t++) styleTable(ctx, hTbls[t], xTbls[t], geo.contentW);
+  }
+  var xExt = docXml ? Array.prototype.filter.call(docXml.getElementsByTagNameNS(WP_NS, 'extent'),
+    function (e) { return /^(inline|anchor)$/.test(e.parentNode.localName); }) : [];
+  var hImgs = host.querySelectorAll('img');
+  if (xExt.length === hImgs.length) {
+    for (var im = 0; im < hImgs.length; im++) {
+      var iw = (+xExt[im].getAttribute('cx') || 0) / 9525, ih = (+xExt[im].getAttribute('cy') || 0) / 9525;
+      if (iw > 0 && ih > 0) {
+        var ks = Math.min(1, geo.contentW / iw, geo.contentH / ih);
+        hImgs[im].style.width = (iw * ks) + 'px';
+        hImgs[im].style.height = (ih * ks) + 'px';
+      }
+    }
+  }
+
+  // 5. Paginate. Cut points, best first: between top-level blocks and table
+  //    rows; then between paragraphs inside a cell; then between lines.
+  var top0 = host.getBoundingClientRect().top;
+  var total = host.scrollHeight;
+  var rel = function (r) { return Math.round((r - top0) * 100) / 100; };
+  var tier1 = [], tier2 = [], forced = [], tier3 = null;
+  Array.prototype.forEach.call(host.children, function (el) {
+    var r = el.getBoundingClientRect();
+    tier1.push(rel(r.bottom));
+    if (el.hasAttribute('data-ss-break-before')) forced.push(rel(r.top));
+    if (el.hasAttribute('data-ss-break-after')) forced.push(rel(r.bottom));
+  });
+  Array.prototype.forEach.call(host.querySelectorAll('tr'), function (tr) {
+    tier1.push(rel(tr.getBoundingClientRect().bottom));
+  });
+  Array.prototype.forEach.call(host.querySelectorAll('td p, th p, td li, th li'), function (p) {
+    tier2.push(rel(p.getBoundingClientRect().bottom));
+  });
+  var lines = null;                       // every line box: [top, bottom]
+  function lineBoxes() {
+    if (lines) return lines;
+    lines = [];
+    var tw = document.createTreeWalker(host, NodeFilter.SHOW_TEXT), n, range = document.createRange();
+    while ((n = tw.nextNode())) {
+      range.selectNodeContents(n);
+      Array.prototype.forEach.call(range.getClientRects(), function (r) { lines.push([rel(r.top), rel(r.bottom)]); });
+    }
+    tier3 = lines.map(function (l) { return l[1]; });
+    return lines;
+  }
+  // A cut inside a table row must not slice a line in the cell next door.
+  function clearOfText(y) {
+    var L = lineBoxes();
+    for (var i = 0; i < L.length; i++) if (L[i][0] < y - 0.5 && L[i][1] > y + 0.5) return false;
+    return true;
+  }
+  function best(list, lo, hi, check) {
+    var m = -1;
+    for (var i = 0; i < list.length; i++) {
+      var v = list[i];
+      if (v > lo + 0.5 && v <= hi && v > m && (!check || clearOfText(v))) m = v;
+    }
+    return m;
+  }
+  forced.sort(function (a, b) { return a - b; });
+  var slices = [], start = 0, guard = 0;
+  while (start < total - 0.5 && guard++ < DOCX_MAX_PAGES) {
+    var limit = start + geo.contentH, end;
+    var f = forced.filter(function (v) { return v > start + 0.5 && v <= limit; })[0];
+    if (f != null) end = f;
+    else if (total <= limit) end = total;
+    else {
+      end = best(tier1, start, limit);
+      if (end < start + geo.contentH * 0.5) end = Math.max(end, best(tier2, start, limit, true));
+      if (end < start + geo.contentH * 0.5) { lineBoxes(); end = Math.max(end, best(tier3, start, limit, true)); }
+      if (end <= start) end = limit;            // a single line taller than a page
+    }
+    slices.push([start, end]);
+    start = end;
+  }
+  // The loop only stops early at the page cap. docxToPdfBase64 measures
+  // what each page really shows before drawing it.
+  if (start < total - 0.5) {
+    throw new Error('This Word document is longer than ' + DOCX_MAX_PAGES +
+      ' pages. Please save it as a PDF and upload that instead.');
+  }
+
+  var header = sectPr ? await docxHeaderFooter(ctx, zip, sectPr, 'header') : [];
+  var footer = sectPr ? await docxHeaderFooter(ctx, zip, sectPr, 'footer') : [];
+  return { host: host, geo: geo, slices: slices, header: header, footer: footer, top0: top0 };
+}
+
+function hfBlock(items, pageNo, pages) {
+  var wrap = document.createElement('div');
+  items.forEach(function (h) {
+    var line = document.createElement('div');
+    blockCss(line, h.o);
+    line.style.paddingTop = line.style.paddingBottom = '0px';
+    var parts = h.text.replace(/\u0001/g, String(pageNo)).replace(/\u0002/g, String(pages)).split('\t');
+    if (parts.length === 1) {
+      line.textContent = parts[0];
+    } else {                                  // Word's header tabs: left, centre, right
+      line.style.display = 'flex';
+      line.style.textIndent = '0px';
+      var slots = ['', '', ''];
+      parts.forEach(function (s, i) { slots[Math.min(i, 2)] += s; });
+      if (parts.length === 2) { slots[2] = slots[1]; slots[1] = ''; }
+      slots.forEach(function (s, i) {
+        var cell = document.createElement('div');
+        cell.style.flex = '1';
+        cell.style.textAlign = ['left', 'center', 'right'][i];
+        cell.textContent = s;
+        line.appendChild(cell);
+      });
+    }
+    wrap.appendChild(line);
+  });
+  return wrap;
+}
+
+async function docxToPdfBase64(arrayBuffer) {
+  var L = await layoutDocx(arrayBuffer);
+  var g = L.geo;
+  var boxes = Array.prototype.map.call(L.host.children, function (el) {
+    var r = el.getBoundingClientRect();
+    return { el: el, top: r.top - L.top0, bottom: r.bottom - L.top0, shown: 0 };
+  });
+  // Measured; take the layout out of the page so each html2canvas call only
+  // copies the one page it draws.
+  L.host.parentNode.removeChild(L.host);
   var pdfDoc = await PDFLib.PDFDocument.create();
-  for (var p = 0; p < pagesEls.length; p++) {
+  for (var p = 0; p < L.slices.length; p++) {
+    var s = L.slices[p][0], e = L.slices[p][1];
     var pageDiv = document.createElement('div');
-    pageDiv.style.cssText = 'position:absolute;left:-10000px;top:0;height:1056px;overflow:hidden;' + baseCss;
-    pagesEls[p].forEach(function (el) { pageDiv.appendChild(el); });
+    pageDiv.className = 'ss-docx ss-docx-tmp';
+    pageDiv.style.cssText = 'position:absolute;left:-10000px;top:0;overflow:hidden;background:#fff;' +
+      'width:' + g.W + 'px;height:' + g.H + 'px;';
+    pageDiv.style.fontSize = L.host.style.fontSize;
+    pageDiv.style.fontFamily = L.host.style.fontFamily;
+    var view = document.createElement('div');
+    view.style.cssText = 'position:absolute;overflow:hidden;left:' + twPx(g.left) + 'px;top:' +
+      twPx(g.top) + 'px;width:' + g.contentW + 'px;height:' + (e - s) + 'px;';
+    var inner = document.createElement('div');
+    inner.style.cssText = 'position:absolute;left:0;width:' + g.contentW + 'px;';
+    var first = null, onPage = [];
+    boxes.forEach(function (b) {
+      if (Math.min(b.bottom, e) - Math.max(b.top, s) > 0.01) {
+        if (first === null) first = b.top;
+        var clone = b.el.cloneNode(true);
+        inner.appendChild(clone);
+        onPage.push([b, clone]);
+      }
+    });
+    inner.style.top = ((first === null ? s : first) - s) + 'px';
+    view.appendChild(inner);
+    pageDiv.appendChild(view);
+    if (L.header.length) {
+      var hd = hfBlock(L.header, p + 1, L.slices.length);
+      hd.style.cssText = 'position:absolute;left:' + twPx(g.left) + 'px;top:' + twPx(g.header) +
+        'px;width:' + g.contentW + 'px;';
+      pageDiv.appendChild(hd);
+    }
+    if (L.footer.length) {
+      var ft = hfBlock(L.footer, p + 1, L.slices.length);
+      ft.style.cssText = 'position:absolute;left:' + twPx(g.left) + 'px;bottom:' + twPx(g.footer) +
+        'px;width:' + g.contentW + 'px;';
+      pageDiv.appendChild(ft);
+    }
     document.body.appendChild(pageDiv);
-    var canvas = await html2canvas(pageDiv, { scale: 2, backgroundColor: '#ffffff' });
-    document.body.removeChild(pageDiv);
+    // Measure what this page really shows of each block: the part of its
+    // clone that falls inside the visible body area.
+    var vr = view.getBoundingClientRect();
+    onPage.forEach(function (pc) {
+      var r = pc[1].getBoundingClientRect();
+      pc[0].shown += Math.max(0, Math.min(r.bottom, vr.bottom) - Math.max(r.top, vr.top));
+    });
+    var canvas;
+    try {
+      canvas = await html2canvas(pageDiv, { scale: 2, backgroundColor: '#ffffff' });
+    } finally {
+      document.body.removeChild(pageDiv);
+    }
     var png = await pdfDoc.embedPng(canvas.toDataURL('image/png'));
-    var page = pdfDoc.addPage([612, 792]); // US Letter in points
-    page.drawImage(png, { x: 0, y: 0, width: 612, height: 792 });
+    canvas.width = canvas.height = 0;                          // frees memory now (iOS caps canvases)
+    var page = pdfDoc.addPage([g.wTw / 20, g.hTw / 20]);     // the document's own page size, in points
+    page.drawImage(png, { x: 0, y: 0, width: g.wTw / 20, height: g.hTw / 20 });
+  }
+  // Every block must have been shown in full across the pages, or we refuse.
+  var missing = boxes.filter(function (b) { return b.bottom - b.top - b.shown > 1.5; });
+  if (missing.length) {
+    throw new Error('Part of this Word document could not be placed on a page. ' +
+      'Please save it as a PDF and upload that instead.');
   }
   return bytesToB64(await pdfDoc.save());
 }
