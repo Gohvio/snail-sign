@@ -1943,7 +1943,7 @@ html[data-theme="dark"] #mk .theme-toggle .moon{display:block}
             padding:12px 26px;border-radius:10px;text-decoration:none;font-size:15px">Send my free document &rarr;</a>
 </div>
 
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 <div id="busy">Working&hellip;</div>
 
 <!-- ============================================================
@@ -2410,7 +2410,8 @@ function wordCheckedOrPrompt() {
   var note = document.getElementById('wordNotice');
   note.classList.add('needs-tick');
   note.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  toast('This was converted from Word. Check each page, then tick \u201cI\u2019ve checked every page\u201d before sending.');
+  document.getElementById('wordChecked').focus({ preventScroll: true });
+  toast('This was converted from Word. Check each page, then tick \u201cI\u2019ve checked every page\u201d to continue.');
   return false;
 }
 
