@@ -2698,11 +2698,13 @@ var TC_LEGEND = /^\s*(redline\s*(key|legend)|key\s*to\s*(the\s*)?redline)\b/i;
 /* Returns true if the file had changes to review and the review screen is now up. */
 async function tcLoad(buf) {
   if (typeof JSZip === 'undefined') return false;
+  if (buf.byteLength > DOCX_MAX_BYTES) return false;   // docxToPdfBase64 refuses it with a message
   var zip, xmlText;
   try {
     zip = await JSZip.loadAsync(buf);
     var f = zip.file('word/document.xml');
     if (!f) return false;
+    try { docxCheckUnpackedSize(zip); } catch (big) { return false; }
     xmlText = await f.async('string');
   } catch (e) { return false; }
   // Cheap pre-check. The character class after the name stops <w:insideH> and
@@ -2949,10 +2951,11 @@ function setupTrackedChanges() {
    Pagination cuts only between table rows, paragraphs or, as a last resort,
    lines of text. The page slices are contiguous from the top of the document
    to the bottom, so content taller than a page flows onto the next page
-   instead of being clipped (KNOWN_ISSUES P0-3). After drawing, every block's
-   full height is checked against what the pages showed; if anything is
-   short, the conversion stops with an error rather than producing a short
-   document. Files over 20 MB or 500 pages are refused the same way.
+   instead of being clipped (KNOWN_ISSUES P0-3). Before each page is drawn,
+   the visible part of every block on it is measured; if the pages together
+   don't show every block in full, the conversion stops with an error rather
+   than producing a short document. Files over 20 MB (or whose text unpacks
+   past 100 MB) and documents over 500 pages are refused the same way.
    ==========================================================================*/
 var W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 var R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -3458,13 +3461,23 @@ function textWithoutLabels(root) {
    it) plus the page geometry. Kept separate from docxToPdfBase64 so the test
    harness beside this repo can check that no row or paragraph falls between
    two pages. */
-var DOCX_MAX_BYTES = 20 * 1024 * 1024, DOCX_MAX_PAGES = 500;
+var DOCX_MAX_BYTES = 20 * 1024 * 1024, DOCX_MAX_PAGES = 500, DOCX_MAX_UNPACKED = 100 * 1024 * 1024;
+/* A small .docx can unpack to gigabytes. JSZip records each part's unpacked
+   size; it's not public API, so if it's missing we rely on the other caps. */
+function docxCheckUnpackedSize(zip) {
+  var size = 0;
+  try { size = zip.files['word/document.xml']._data.uncompressedSize || 0; } catch (e) { size = 0; }
+  if (size > DOCX_MAX_UNPACKED) {
+    throw new Error('This Word file is too large to open here. Please save it as a PDF and upload that instead.');
+  }
+}
 async function layoutDocx(arrayBuffer) {
   if (arrayBuffer.byteLength > DOCX_MAX_BYTES) {
     throw new Error('This Word file is over 20 MB. Please save it as a PDF and upload that instead.');
   }
   ensureDocxCss();
   var zip = await JSZip.loadAsync(arrayBuffer);
+  docxCheckUnpackedSize(zip);
   var docXml = await zipXml(zip, 'word/document.xml');
   var ctx = await docxContext(zip);
   var result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer },
@@ -3495,8 +3508,6 @@ async function layoutDocx(arrayBuffer) {
   readRPr(ctx, ctx.defRPr, base);
   styleChain(ctx, ctx.defaultPara).forEach(function (st) { readRPr(ctx, st.rPr, base); });
 
-  // A run that threw earlier may have left its offscreen layout behind.
-  Array.prototype.forEach.call(document.querySelectorAll('.ss-docx-tmp'), function (el) { el.remove(); });
   var host = document.createElement('div');
   host.className = 'ss-docx ss-docx-tmp';
   host.style.cssText = 'position:absolute;left:-10000px;top:0;width:' + geo.contentW + 'px;';
@@ -3504,6 +3515,17 @@ async function layoutDocx(arrayBuffer) {
   host.style.fontFamily = cssFont(base.font);
   host.innerHTML = result.value || '<p>(empty document)</p>';
   document.body.appendChild(host);
+  try {
+    return await layoutDocxSteps(ctx, zip, docXml, result, geo, host);
+  } catch (err) {
+    if (host.parentNode) host.parentNode.removeChild(host);
+    throw err;
+  }
+}
+
+async function layoutDocxSteps(ctx, zip, docXml, result, geo, host) {
+  var body = docXml && docXml.getElementsByTagNameNS(W_NS, 'body')[0];
+  var sectPr = body ? wKids(body, 'sectPr').pop() : null;
   var key = function (s) { return s.replace(/\s+/g, ''); };
   var srcKey = key(host.textContent);
 
@@ -3529,7 +3551,11 @@ async function layoutDocx(arrayBuffer) {
     // Blank paragraphs only match nearby; real text searches to the end.
     var stop = k ? xParas.length : Math.min(xi + 6, xParas.length);
     for (var j = xi; j < stop; j++) {
-      if (xkeys[j] === k) { props.set(el, infos[j]); xi = j + 1; return; }
+      if (xkeys[j] !== k) continue;
+      // A far jump onto repeated text ("Name:", "Date:") would misalign
+      // everything in between; only take it when the text is unique.
+      if (j > xi + 6 && xkeys.indexOf(k, j + 1) !== -1) return;
+      props.set(el, infos[j]); xi = j + 1; return;
     }
   });
 
@@ -3672,7 +3698,7 @@ async function layoutDocx(arrayBuffer) {
   }
   forced.sort(function (a, b) { return a - b; });
   var slices = [], start = 0, guard = 0;
-  while (start < total - 0.5 && guard++ <= DOCX_MAX_PAGES) {
+  while (start < total - 0.5 && guard++ < DOCX_MAX_PAGES) {
     var limit = start + geo.contentH, end;
     var f = forced.filter(function (v) { return v > start + 0.5 && v <= limit; })[0];
     if (f != null) end = f;
@@ -3686,10 +3712,9 @@ async function layoutDocx(arrayBuffer) {
     slices.push([start, end]);
     start = end;
   }
-  // Slices meet end to end by construction; the loop only stops early at the
-  // page cap. docxToPdfBase64 then checks the pages it actually draws.
+  // The loop only stops early at the page cap. docxToPdfBase64 measures
+  // what each page really shows before drawing it.
   if (start < total - 0.5) {
-    document.body.removeChild(host);
     throw new Error('This Word document is longer than ' + DOCX_MAX_PAGES +
       ' pages. Please save it as a PDF and upload that instead.');
   }
@@ -3751,13 +3776,13 @@ async function docxToPdfBase64(arrayBuffer) {
       twPx(g.top) + 'px;width:' + g.contentW + 'px;height:' + (e - s) + 'px;';
     var inner = document.createElement('div');
     inner.style.cssText = 'position:absolute;left:0;width:' + g.contentW + 'px;';
-    var first = null;
+    var first = null, onPage = [];
     boxes.forEach(function (b) {
-      var shown = Math.min(b.bottom, e) - Math.max(b.top, s);
-      if (shown > 0.01) {
+      if (Math.min(b.bottom, e) - Math.max(b.top, s) > 0.01) {
         if (first === null) first = b.top;
-        inner.appendChild(b.el.cloneNode(true));
-        b.shown += shown;
+        var clone = b.el.cloneNode(true);
+        inner.appendChild(clone);
+        onPage.push([b, clone]);
       }
     });
     inner.style.top = ((first === null ? s : first) - s) + 'px';
@@ -3776,6 +3801,13 @@ async function docxToPdfBase64(arrayBuffer) {
       pageDiv.appendChild(ft);
     }
     document.body.appendChild(pageDiv);
+    // Measure what this page really shows of each block: the part of its
+    // clone that falls inside the visible body area.
+    var vr = view.getBoundingClientRect();
+    onPage.forEach(function (pc) {
+      var r = pc[1].getBoundingClientRect();
+      pc[0].shown += Math.max(0, Math.min(r.bottom, vr.bottom) - Math.max(r.top, vr.top));
+    });
     var canvas;
     try {
       canvas = await html2canvas(pageDiv, { scale: 2, backgroundColor: '#ffffff' });
@@ -3787,8 +3819,8 @@ async function docxToPdfBase64(arrayBuffer) {
     var page = pdfDoc.addPage([g.wTw / 20, g.hTw / 20]);     // the document's own page size, in points
     page.drawImage(png, { x: 0, y: 0, width: g.wTw / 20, height: g.hTw / 20 });
   }
-  // Every block must have been drawn in full across the pages, or we refuse.
-  var missing = boxes.filter(function (b) { return Math.abs(b.shown - (b.bottom - b.top)) > 1; });
+  // Every block must have been shown in full across the pages, or we refuse.
+  var missing = boxes.filter(function (b) { return b.bottom - b.top - b.shown > 1.5; });
   if (missing.length) {
     throw new Error('Part of this Word document could not be placed on a page. ' +
       'Please save it as a PDF and upload that instead.');
