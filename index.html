@@ -3311,12 +3311,14 @@ function markHidden(ctx, p) {           // is the paragraph mark itself hidden?
   return pv != null ? pv : !!vanishOf(ctx.defRPr);
 }
 function stripHiddenText(ctx, xml) {
-  var touched = [];
+  var touched = [], changed = false;
   Array.prototype.slice.call(xml.getElementsByTagNameNS(W_NS, 'r')).forEach(function (r) {
     if (!r.parentNode || !runHidden(ctx, r)) return;
     // A field's begin/separate/end markers must stay paired, or mammoth can fail.
     if (r.getElementsByTagNameNS(W_NS, 'fldChar').length) return;
-    if (r.textContent.trim()) {
+    changed = true;
+    if (r.textContent.trim() || r.getElementsByTagNameNS(W_NS, 'drawing').length ||
+        r.getElementsByTagNameNS(W_NS, 'pict').length) {   // hidden pictures count too
       var p = r.parentNode;
       while (p && !(p.namespaceURI === W_NS && p.localName === 'p')) p = p.parentNode;
       if (p && touched.indexOf(p) < 0) touched.push(p);
@@ -3331,10 +3333,10 @@ function stripHiddenText(ctx, xml) {
                !!wKid(wKid(p, 'pPr'), 'sectPr');                     // keep section breaks
     var parent = p.parentNode;
     var lastInCell = parent.namespaceURI === W_NS && parent.localName === 'tc' && wKids(parent, 'p').length === 1;
-    if (!left && !lastInCell) parent.removeChild(p);
+    if (!left && !lastInCell) { parent.removeChild(p); changed = true; }
   });
-  docxHiddenCount += touched.length;     // paragraphs that lost hidden text, not runs
-  return touched.length;
+  docxHiddenCount += touched.length;     // paragraphs that lost hidden content, not runs
+  return changed;                        // any removal at all means mammoth gets the rewrite
 }
 
 /* Header/footer text with PAGE and NUMPAGES fields turned into placeholders. */
@@ -3534,10 +3536,13 @@ function textWithoutLabels(root) {
    two pages. */
 var DOCX_MAX_BYTES = 20 * 1024 * 1024, DOCX_MAX_PAGES = 500, DOCX_MAX_UNPACKED = 100 * 1024 * 1024;
 /* A small .docx can unpack to gigabytes. JSZip records each part's unpacked
-   size; it's not public API, so if it's missing we rely on the other caps. */
+   size; it's not public API and a crafted file can misstate it, so this is a
+   defence layer, not a hard limit, and the other caps still apply. */
 function docxCheckUnpackedSize(zip) {
   var size = 0;
-  try { size = zip.files['word/document.xml']._data.uncompressedSize || 0; } catch (e) { size = 0; }
+  Object.keys(zip.files).forEach(function (name) {     // every part, not only the body
+    try { size += zip.files[name]._data.uncompressedSize || 0; } catch (e) { /* unknown: other caps apply */ }
+  });
   if (size > DOCX_MAX_UNPACKED) {
     throw new Error('This Word file is too large to open here. Please save it as a PDF and upload that instead.');
   }
