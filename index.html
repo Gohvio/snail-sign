@@ -2995,7 +2995,7 @@ function twPx(tw) { return (tw || 0) / 15; }          // twentieths of a point -
 function hexColor(v) { return /^[0-9a-f]{6}$/i.test(v || '') ? '#' + v : null; }
 function cssFont(name) {
   var n = String(name || '').replace(/["'\\;{}<>]/g, '').trim();
-  if (!n) return 'Georgia, serif';
+  if (!n) return '"Times New Roman", serif';   // Word's own fallback
   var serif = /times|georgia|cambria|garamond|book|palatino|baskerville|minion|serif/i.test(n) &&
               !/sans/i.test(n);
   return '"' + n + '", ' + (serif ? 'serif' : 'sans-serif');
@@ -3257,12 +3257,31 @@ function paraInfo(ctx, p) {
         var rs = rPr && wAttr(wKid(rPr, 'rStyle'), 'val');
         styleChain(ctx, rs).forEach(function (st) { readRPr(ctx, st.rPr, r); });
         readRPr(ctx, rPr, r);
+        r.len = c.textContent.length;
         runs.push(r);
       }
     }
   });
+  // Bold and italic sit on the runs now (pinRunEmphasis); the paragraph only
+  // takes them when every run has them, so one regular run stays regular.
+  // Size, font and colour aren't carried per run, so the paragraph takes the
+  // value that covers most of its text: a clause whose bold lead-in is 13pt
+  // and whose body is 12pt prints at 12pt, as most of it does in Word.
+  var styled = { sz: o.sz, font: o.font, color: o.color };
+  o.b = false; o.i = false;
   if (runs.length) {
-    ['sz', 'font', 'color', 'b', 'i', 'caps'].forEach(function (k) {
+    ['sz', 'font', 'color'].forEach(function (k) {
+      var weight = {};
+      runs.forEach(function (r) {
+        var v = r[k] != null ? r[k] : styled[k];
+        if (v == null) return;
+        weight[v] = (weight[v] || 0) + r.len;
+      });
+      var bestV = null, bestW = -1;
+      Object.keys(weight).forEach(function (v) { if (weight[v] > bestW) { bestW = weight[v]; bestV = v; } });
+      if (bestV != null) o[k] = k === 'sz' ? +bestV : bestV;
+    });
+    ['b', 'i', 'caps'].forEach(function (k) {
       var v = runs[0][k];
       if (v != null && runs.every(function (r) { return r[k] === v; })) o[k] = v;
     });
@@ -3278,31 +3297,54 @@ function paraInfo(ctx, p) {
 /* Text formatted as hidden in Word (w:vanish) doesn't print from Word, so it
    must not reach the signer's PDF either: a signer would be signing wording
    the sender never saw on paper. Removes hidden runs, and paragraphs whose
-   paragraph mark is hidden and that are left empty. Returns how many
-   passages were removed and adds them to docxHiddenCount. */
+   paragraph mark is hidden and that are left empty. Returns true if anything
+   was removed, and adds the number of affected paragraphs to docxHiddenCount. */
 var docxHiddenCount = 0;
-function vanishOf(rPr) { var v = wKid(rPr, 'vanish'); return v ? wOn(v) : null; }
-function chainVanish(ctx, id) {          // last word within one style's basedOn chain
+function toggleOf(rPr, name) { var v = wKid(rPr, name); return v ? wOn(v) : null; }
+function vanishOf(rPr) { return toggleOf(rPr, 'vanish'); }
+function chainToggle(ctx, id, name) {    // last word within one style's basedOn chain
   var v = null;
-  styleChain(ctx, id).forEach(function (st) { var x = vanishOf(st.rPr); if (x != null) v = x; });
+  styleChain(ctx, id).forEach(function (st) { var x = toggleOf(st.rPr, name); if (x != null) v = x; });
   return v;
 }
+function chainVanish(ctx, id) { return chainToggle(ctx, id, 'vanish'); }
 function paraStyleId(ctx, p) {
   var pPr = p && wKid(p, 'pPr');
   return (pPr && wAttr(wKid(pPr, 'pStyle'), 'val')) || ctx.defaultPara;
 }
 /* vanish is a toggle (ECMA-376 17.7.3): a paragraph style and a character
    style that both hide text cancel out. Direct formatting decides outright. */
-function runHidden(ctx, r) {
+function runToggle(ctx, r, name) {      // b, i and vanish all follow the toggle rule
   var p = r.parentNode;
   while (p && !(p.namespaceURI === W_NS && p.localName === 'p')) p = p.parentNode;
   var rPr = wKid(r, 'rPr');
-  var own = vanishOf(rPr);
+  var own = toggleOf(rPr, name);
   if (own != null) return own;
-  var pv = chainVanish(ctx, paraStyleId(ctx, p));
-  var cv = chainVanish(ctx, rPr && wAttr(wKid(rPr, 'rStyle'), 'val'));
-  if (pv == null && cv == null) return !!vanishOf(ctx.defRPr);
+  var pv = chainToggle(ctx, paraStyleId(ctx, p), name);
+  var cv = chainToggle(ctx, rPr && wAttr(wKid(rPr, 'rStyle'), 'val'), name);
+  if (pv == null && cv == null) return !!toggleOf(ctx.defRPr, name);
   return !!pv !== !!cv;
+}
+function runHidden(ctx, r) { return runToggle(ctx, r, 'vanish'); }
+
+/* mammoth only sees bold and italic written on the run itself, so a bold
+   paragraph style ("2.1 Fee Structure." in a heading-style clause) would either
+   vanish or, once the paragraph is styled, spread over the whole clause. Write
+   each run's real bold/italic onto the run, so mammoth marks exactly the right
+   words; the paragraph itself is only bold or italic when every run is. */
+function pinRunEmphasis(ctx, xml) {
+  var changed = false;
+  Array.prototype.slice.call(xml.getElementsByTagNameNS(W_NS, 'r')).forEach(function (r) {
+    ['b', 'i'].forEach(function (name) {
+      var rPr = wKid(r, 'rPr');
+      if (toggleOf(rPr, name) != null) return;               // already explicit
+      if (!runToggle(ctx, r, name)) return;                   // plain: mammoth's default
+      if (!rPr) { rPr = xml.createElementNS(W_NS, 'w:rPr'); r.insertBefore(rPr, r.firstChild); }
+      rPr.appendChild(xml.createElementNS(W_NS, 'w:' + name));
+      changed = true;
+    });
+  });
+  return changed;
 }
 function markHidden(ctx, p) {           // is the paragraph mark itself hidden?
   var own = vanishOf(wKid(wKid(p, 'pPr'), 'rPr'));
@@ -3379,6 +3421,7 @@ async function docxHeaderFooter(ctx, zip, sectPr, kind) {
   var xml = await zipXml(zip, path);
   if (!xml) return [];
   stripHiddenText(ctx, xml);
+  pinRunEmphasis(ctx, xml);
   return wKids(xml.documentElement, 'p').map(function (p) {
     return { o: paraInfo(ctx, p), text: hfText(p) };
   }).filter(function (h) { return h.text.replace(/\s/g, ''); });
@@ -3562,14 +3605,14 @@ async function layoutDocx(arrayBuffer) {
   // mammoth must not see hidden text either: strip the body, footnotes and
   // endnotes it reads, and hand it the rewritten file.
   var rewrote = false;
-  if (docXml && stripHiddenText(ctx, docXml)) {
+  if (docXml && (stripHiddenText(ctx, docXml) | pinRunEmphasis(ctx, docXml))) {   // | : run both
     zip.file('word/document.xml', new XMLSerializer().serializeToString(docXml));
     rewrote = true;
   }
   var notes = ['word/footnotes.xml', 'word/endnotes.xml'];
   for (var ni = 0; ni < notes.length; ni++) {
     var nx = await zipXml(zip, notes[ni]);
-    if (nx && stripHiddenText(ctx, nx)) {
+    if (nx && (stripHiddenText(ctx, nx) | pinRunEmphasis(ctx, nx))) {
       zip.file(notes[ni], new XMLSerializer().serializeToString(nx));
       rewrote = true;
     }
