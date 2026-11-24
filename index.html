@@ -2365,9 +2365,8 @@ async function handleFile(file) {
 }
 
 function hiddenTextNote() {
-  return 'This Word file had ' + docxHiddenCount + ' passage' + (docxHiddenCount === 1 ? '' : 's') +
-    ' of hidden text. It has been left out, as Word leaves it out when printing. ' +
-    'If it should be in the agreement, unhide it in Word and upload again.';
+  return 'Some text in this Word file is set to hidden, so we left it out. Your signer won\u2019t see it. ' +
+    'If it belongs in the agreement, unhide it in Word and upload the file again.';
 }
 
 /* Leave the upload screen and show the block-placing workspace. */
@@ -3283,39 +3282,59 @@ function paraInfo(ctx, p) {
    passages were removed and adds them to docxHiddenCount. */
 var docxHiddenCount = 0;
 function vanishOf(rPr) { var v = wKid(rPr, 'vanish'); return v ? wOn(v) : null; }
+function chainVanish(ctx, id) {          // last word within one style's basedOn chain
+  var v = null;
+  styleChain(ctx, id).forEach(function (st) { var x = vanishOf(st.rPr); if (x != null) v = x; });
+  return v;
+}
+function paraStyleId(ctx, p) {
+  var pPr = p && wKid(p, 'pPr');
+  return (pPr && wAttr(wKid(pPr, 'pStyle'), 'val')) || ctx.defaultPara;
+}
+/* vanish is a toggle (ECMA-376 17.7.3): a paragraph style and a character
+   style that both hide text cancel out. Direct formatting decides outright. */
 function runHidden(ctx, r) {
-  var hidden = vanishOf(ctx.defRPr) || false;
   var p = r.parentNode;
   while (p && !(p.namespaceURI === W_NS && p.localName === 'p')) p = p.parentNode;
-  var pPr = p && wKid(p, 'pPr');
-  var sid = (pPr && wAttr(wKid(pPr, 'pStyle'), 'val')) || ctx.defaultPara;
   var rPr = wKid(r, 'rPr');
-  var rs = rPr && wAttr(wKid(rPr, 'rStyle'), 'val');
-  styleChain(ctx, sid).concat(styleChain(ctx, rs)).forEach(function (st) {
-    var v = vanishOf(st.rPr); if (v != null) hidden = v;
-  });
   var own = vanishOf(rPr);
-  return own != null ? own : hidden;
+  if (own != null) return own;
+  var pv = chainVanish(ctx, paraStyleId(ctx, p));
+  var cv = chainVanish(ctx, rPr && wAttr(wKid(rPr, 'rStyle'), 'val'));
+  if (pv == null && cv == null) return !!vanishOf(ctx.defRPr);
+  return !!pv !== !!cv;
+}
+function markHidden(ctx, p) {           // is the paragraph mark itself hidden?
+  var own = vanishOf(wKid(wKid(p, 'pPr'), 'rPr'));
+  if (own != null) return own;
+  var pv = chainVanish(ctx, paraStyleId(ctx, p));
+  return pv != null ? pv : !!vanishOf(ctx.defRPr);
 }
 function stripHiddenText(ctx, xml) {
-  var removed = 0;
+  var touched = [];
   Array.prototype.slice.call(xml.getElementsByTagNameNS(W_NS, 'r')).forEach(function (r) {
-    if (r.parentNode && runHidden(ctx, r)) {
-      if (r.textContent.trim()) removed++;
-      r.parentNode.removeChild(r);
+    if (!r.parentNode || !runHidden(ctx, r)) return;
+    // A field's begin/separate/end markers must stay paired, or mammoth can fail.
+    if (r.getElementsByTagNameNS(W_NS, 'fldChar').length) return;
+    if (r.textContent.trim()) {
+      var p = r.parentNode;
+      while (p && !(p.namespaceURI === W_NS && p.localName === 'p')) p = p.parentNode;
+      if (p && touched.indexOf(p) < 0) touched.push(p);
     }
+    r.parentNode.removeChild(r);
   });
   Array.prototype.slice.call(xml.getElementsByTagNameNS(W_NS, 'p')).forEach(function (p) {
-    var markHidden = vanishOf(wKid(wKid(p, 'pPr'), 'rPr'));
-    if (!markHidden || !p.parentNode) return;
+    if (!p.parentNode || !markHidden(ctx, p)) return;
     var left = Array.prototype.some.call(p.getElementsByTagNameNS(W_NS, 't'), function (t) { return t.textContent; }) ||
-               p.getElementsByTagNameNS(W_NS, 'drawing').length > 0;
+               p.getElementsByTagNameNS(W_NS, 'drawing').length > 0 ||
+               p.getElementsByTagNameNS(W_NS, 'fldChar').length > 0 ||
+               !!wKid(wKid(p, 'pPr'), 'sectPr');                     // keep section breaks
     var parent = p.parentNode;
     var lastInCell = parent.namespaceURI === W_NS && parent.localName === 'tc' && wKids(parent, 'p').length === 1;
     if (!left && !lastInCell) parent.removeChild(p);
   });
-  docxHiddenCount += removed;
-  return removed;
+  docxHiddenCount += touched.length;     // paragraphs that lost hidden text, not runs
+  return touched.length;
 }
 
 /* Header/footer text with PAGE and NUMPAGES fields turned into placeholders. */
@@ -3534,10 +3553,22 @@ async function layoutDocx(arrayBuffer) {
   var ctx = await docxContext(zip);
   docxHiddenCount = 0;
   var mammothInput = arrayBuffer;
-  if (docXml && stripHiddenText(ctx, docXml)) {          // mammoth must not see it either
+  // mammoth must not see hidden text either: strip the body, footnotes and
+  // endnotes it reads, and hand it the rewritten file.
+  var rewrote = false;
+  if (docXml && stripHiddenText(ctx, docXml)) {
     zip.file('word/document.xml', new XMLSerializer().serializeToString(docXml));
-    mammothInput = await zip.generateAsync({ type: 'arraybuffer' });
+    rewrote = true;
   }
+  var notes = ['word/footnotes.xml', 'word/endnotes.xml'];
+  for (var ni = 0; ni < notes.length; ni++) {
+    var nx = await zipXml(zip, notes[ni]);
+    if (nx && stripHiddenText(ctx, nx)) {
+      zip.file(notes[ni], new XMLSerializer().serializeToString(nx));
+      rewrote = true;
+    }
+  }
+  if (rewrote) mammothInput = await zip.generateAsync({ type: 'arraybuffer' });
   var result = await mammoth.convertToHtml({ arrayBuffer: mammothInput },
     { styleMap: ['u => u'], ignoreEmptyParagraphs: false });
 
