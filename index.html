@@ -2354,12 +2354,20 @@ async function handleFile(file) {
       state.pdfBase64 = await docxToPdfBase64(buf);
     } else {
       state.pdfBase64 = bytesToB64(new Uint8Array(buf));
+      docxHiddenCount = 0;
     }
     await enterPrep();
+    if (docxHiddenCount) toast(hiddenTextNote());
   } catch (err) {
     console.error(err);
     toast('Could not read that file: ' + err.message);
   } finally { busy(false); }
+}
+
+function hiddenTextNote() {
+  return 'This Word file had ' + docxHiddenCount + ' passage' + (docxHiddenCount === 1 ? '' : 's') +
+    ' of hidden text. It has been left out, as Word leaves it out when printing. ' +
+    'If it should be in the agreement, unhide it in Word and upload again.';
 }
 
 /* Leave the upload screen and show the block-placing workspace. */
@@ -2908,7 +2916,8 @@ async function tcApply() {
     await enterPrep();
     var a = state.trackedLog.filter(function (c) { return c.decision === 'accept'; }).length;
     toast('Rebuilt clean: ' + a + ' change(s) accepted, ' + (state.trackedLog.length - a) +
-          ' rejected. Now place the blocks your signer needs to fill.');
+          ' rejected. Now place the blocks your signer needs to fill.' +
+          (docxHiddenCount ? ' ' + hiddenTextNote() : ''));
   } catch (err) {
     console.error(err);
     toast('Could not rebuild the document: ' + err.message);
@@ -3267,6 +3276,48 @@ function paraInfo(ctx, p) {
   return o;
 }
 
+/* Text formatted as hidden in Word (w:vanish) doesn't print from Word, so it
+   must not reach the signer's PDF either: a signer would be signing wording
+   the sender never saw on paper. Removes hidden runs, and paragraphs whose
+   paragraph mark is hidden and that are left empty. Returns how many
+   passages were removed and adds them to docxHiddenCount. */
+var docxHiddenCount = 0;
+function vanishOf(rPr) { var v = wKid(rPr, 'vanish'); return v ? wOn(v) : null; }
+function runHidden(ctx, r) {
+  var hidden = vanishOf(ctx.defRPr) || false;
+  var p = r.parentNode;
+  while (p && !(p.namespaceURI === W_NS && p.localName === 'p')) p = p.parentNode;
+  var pPr = p && wKid(p, 'pPr');
+  var sid = (pPr && wAttr(wKid(pPr, 'pStyle'), 'val')) || ctx.defaultPara;
+  var rPr = wKid(r, 'rPr');
+  var rs = rPr && wAttr(wKid(rPr, 'rStyle'), 'val');
+  styleChain(ctx, sid).concat(styleChain(ctx, rs)).forEach(function (st) {
+    var v = vanishOf(st.rPr); if (v != null) hidden = v;
+  });
+  var own = vanishOf(rPr);
+  return own != null ? own : hidden;
+}
+function stripHiddenText(ctx, xml) {
+  var removed = 0;
+  Array.prototype.slice.call(xml.getElementsByTagNameNS(W_NS, 'r')).forEach(function (r) {
+    if (r.parentNode && runHidden(ctx, r)) {
+      if (r.textContent.trim()) removed++;
+      r.parentNode.removeChild(r);
+    }
+  });
+  Array.prototype.slice.call(xml.getElementsByTagNameNS(W_NS, 'p')).forEach(function (p) {
+    var markHidden = vanishOf(wKid(wKid(p, 'pPr'), 'rPr'));
+    if (!markHidden || !p.parentNode) return;
+    var left = Array.prototype.some.call(p.getElementsByTagNameNS(W_NS, 't'), function (t) { return t.textContent; }) ||
+               p.getElementsByTagNameNS(W_NS, 'drawing').length > 0;
+    var parent = p.parentNode;
+    var lastInCell = parent.namespaceURI === W_NS && parent.localName === 'tc' && wKids(parent, 'p').length === 1;
+    if (!left && !lastInCell) parent.removeChild(p);
+  });
+  docxHiddenCount += removed;
+  return removed;
+}
+
 /* Header/footer text with PAGE and NUMPAGES fields turned into placeholders. */
 function hfText(p) {
   var out = '', inInstr = false, instr = '', skip = false;
@@ -3305,6 +3356,7 @@ async function docxHeaderFooter(ctx, zip, sectPr, kind) {
   var path = target.charAt(0) === '/' ? target.slice(1) : 'word/' + target;
   var xml = await zipXml(zip, path);
   if (!xml) return [];
+  stripHiddenText(ctx, xml);
   return wKids(xml.documentElement, 'p').map(function (p) {
     return { o: paraInfo(ctx, p), text: hfText(p) };
   }).filter(function (h) { return h.text.replace(/\s/g, ''); });
@@ -3480,7 +3532,13 @@ async function layoutDocx(arrayBuffer) {
   docxCheckUnpackedSize(zip);
   var docXml = await zipXml(zip, 'word/document.xml');
   var ctx = await docxContext(zip);
-  var result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer },
+  docxHiddenCount = 0;
+  var mammothInput = arrayBuffer;
+  if (docXml && stripHiddenText(ctx, docXml)) {          // mammoth must not see it either
+    zip.file('word/document.xml', new XMLSerializer().serializeToString(docXml));
+    mammothInput = await zip.generateAsync({ type: 'arraybuffer' });
+  }
+  var result = await mammoth.convertToHtml({ arrayBuffer: mammothInput },
     { styleMap: ['u => u'], ignoreEmptyParagraphs: false });
 
   var body = docXml && docXml.getElementsByTagNameNS(W_NS, 'body')[0];
