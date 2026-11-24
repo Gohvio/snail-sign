@@ -1,0 +1,63 @@
+# The Gauntlet: Snail Sign's test harness (_gauntlet/), run on every pull
+# request and on every push to main.
+#
+# Check name: "Gauntlet". Keep it stable; the branch ruleset can require it.
+#
+# Every test in _gauntlet/ passes on main, so any failure means a change broke
+# something. This repository is public: tests for defects that aren't fixed yet
+# are kept privately and land here in the pull request that fixes them.
+#
+# Safety: no secrets, read-only token. The harness intercepts every request to
+# the live Supabase function and to Stripe and serves the site's libraries from
+# a local copy, so no run sends email, charges a card or touches production.
+# _gauntlet/ is never published: GitHub Pages (Jekyll) skips folders whose
+# names start with an underscore.
+
+name: Gauntlet
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gauntlet-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}   # never cancel a run on main
+
+jobs:
+  gauntlet:
+    name: Gauntlet
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: _gauntlet
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: _gauntlet/package-lock.json
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run corpus
+      - run: npm run vendor
+      - run: npx playwright test
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: gauntlet-report
+          path: |
+            _gauntlet/results/
+            _gauntlet/test-results/
+          retention-days: 30
